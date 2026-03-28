@@ -53,7 +53,7 @@ class TestTrainingPipeline:
         summary = model.train(
             k=2,
             i=2,
-            experts=[(expert, 0.5)],
+            experts=[expert],
         )
 
         assert summary["iterations_completed"] == 2
@@ -163,7 +163,7 @@ class TestTrainingPipeline:
         summary = model.train(
             k=4,
             i=2,
-            experts=[(expert1, 0.5), (expert2, 0.3)],
+            experts=[expert1, expert2],
         )
 
         assert summary["iterations_completed"] == 2
@@ -178,13 +178,13 @@ class TestTrainingPipeline:
             enable_checker=True,
         )
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="gpt-4", production_rate=1.0, api_key="test-key")
         model._fine_tune = MagicMock()
 
         summary = model.train(
             k=2,
             i=2,
-            experts=[(expert, 1.0)],
+            experts=[expert],
         )
 
         assert summary["iterations_completed"] == 2
@@ -245,7 +245,7 @@ class TestTrainingPipeline:
     def test_full_pipeline_peft_config(self, mock_unsloth, mock_trainer, temp_dir):
         """Test full training pipeline with custom PEFT config."""
         from autotrain import PEFTConfig
-        
+
         model = Model(
             checkpoint_dir=str(temp_dir),
             sample_multiplier=1,
@@ -277,7 +277,7 @@ class TestTrainingPipeline:
     def test_full_pipeline_training_config(self, mock_unsloth, mock_trainer, temp_dir):
         """Test full training pipeline with custom training config."""
         from autotrain import TrainingConfig
-        
+
         model = Model(
             checkpoint_dir=str(temp_dir),
             sample_multiplier=1,

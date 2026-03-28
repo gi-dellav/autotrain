@@ -390,7 +390,7 @@ class TestModel:
         summary = model.train(
             k=2,
             i=1,
-            experts=[(expert, 0.5)],
+            experts=[expert],
         )
 
         assert summary["iterations_completed"] == 1

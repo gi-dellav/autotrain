@@ -29,8 +29,8 @@ def _init_components(
     # Initialize solver with multiple experts
     expert_weights = []
     if experts:
-        for expert, weight in experts:
-            expert_weights.append(ExpertWeight(expert=expert, weight=weight))
+        for expert in experts:
+            expert_weights.append(ExpertWeight(expert=expert, weight=expert.production_rate))
 
     model._solver = Solver(
         model=model,
@@ -159,7 +159,7 @@ def train(
     model: "Model",
     k: Optional[int] = 100,
     i: int = 10,
-    experts: Optional[list[tuple["Expert", float]]] = None,
+    experts: Optional[list["Expert"]] = None,
     initial_samples: Optional[list[Sample]] = None,
     benchmark: Optional["Benchmark"] = None,
     early_stopping: bool = False,
@@ -180,7 +180,7 @@ def train(
     Args:
         k: Number of samples to use for fine-tuning
         i: Number of iterations
-        experts: List of (expert, weight) tuples for multi-expert setup
+        experts: List of Expert instances for multi-expert setup (uses each expert's production_rate)
         initial_samples: Optional initial dataset to start with
         benchmark: Optional benchmark for evaluation
         early_stopping: Enable early stopping based on benchmark
@@ -229,11 +229,7 @@ def train(
 
     # Validate experts
     if experts:
-        for idx, (expert, weight) in enumerate(experts):
-            if weight < 0:
-                raise ValueError(
-                    f"Expert weight must be non-negative, got {weight} for expert {idx}"
-                )
+        for idx, expert in enumerate(experts):
             if not hasattr(expert, "model_name"):
                 raise ValueError(f"Expert at index {idx} must have a 'model_name' attribute")
 
@@ -452,7 +448,7 @@ def train_vision_model(
     model: "VisionModel",
     k: int = 10,
     i: int = 5,
-    experts: Optional[list[tuple["VisionExpert", float]]] = None,
+    experts: Optional[list["VisionExpert"]] = None,
     initial_samples: Optional[list] = None,
     benchmark: Optional["Benchmark"] = None,
     early_stopping: bool = True,
@@ -466,7 +462,7 @@ def train_vision_model(
         model: The VisionModel to train
         k: Number of samples per iteration
         i: Number of iterations
-        experts: Optional list of (VisionExpert, weight) tuples
+        experts: Optional list of VisionExpert instances (uses each expert's production_rate)
         initial_samples: Optional initial vision samples
         benchmark: Optional evaluation benchmark
         early_stopping: Stop if no improvement
@@ -501,9 +497,9 @@ def train_vision_model(
 
     expert_weights = []
     if experts:
-        for expert, weight in experts:
+        for expert in experts:
             if isinstance(expert, VisionExpert):
-                expert_weights.append(ExpertWeight(expert=expert, weight=weight))
+                expert_weights.append(ExpertWeight(expert=expert, weight=expert.production_rate))
 
     vision_producer = VisionProducer(
         model=model,

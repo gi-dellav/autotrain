@@ -64,7 +64,7 @@ model = Model(model_name="unsloth/llama-3-8b-bnb-4bit")
 expert1 = Expert(model_name="gpt-4", production_rate=0.5)
 expert2 = Expert(model_name="claude-3-sonnet", production_rate=0.25)
 
-model.train(k=100, i=10, experts=[(expert1, 0.5), (expert2, 0.25)])
+model.train(k=100, i=10, experts=[expert1, expert2])
 ```
 
 ### Export Models

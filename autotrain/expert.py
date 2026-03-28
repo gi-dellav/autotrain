@@ -114,7 +114,7 @@ class Expert:
     Example usage:
         expert1 = Expert(model_name="gpt-4", production_rate=0.5)
         expert2 = Expert(model_name="claude-3", production_rate=0.25)
-        model.train(experts=[(expert1, 0.5), (expert2, 0.25)])
+        model.train(experts=[expert1, expert2])
         # This means: 50% from expert1, 25% from expert2, 25% from model
     """
 
@@ -1070,8 +1070,8 @@ class VisionExpert(Expert):
     Uses litellm with OpenRouter as default provider.
 
     Example usage:
-        expert = VisionExpert(model_name="qwen/qwen2.5-vl-7b-instruct")
-        model.train(experts=[(expert, 0.5)])
+        expert = VisionExpert(model_name="qwen/qwen2.5-vl-7b-instruct", production_rate=0.5)
+        model.train(experts=[expert])
     """
 
     def __init__(

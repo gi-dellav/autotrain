@@ -29,7 +29,7 @@ class VisionModel:
 
     Example usage:
         model = VisionModel(model_name="unsloth/Qwen2.5-VL-7B-GGUF")
-        model.train(k=10, i=5, experts=[(expert, 0.5)])
+        model.train(k=10, i=5, experts=[expert])
     """
 
     def __init__(
