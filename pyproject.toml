@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autotrain"
+version = "1.0.0"
+description = "An automated training library for LLM self-tuning and distillation"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Giuseppe Della Vedova"}
+]
+dependencies = [
+    "unsloth",
+    "litellm>=1.0.0",
+    "pandas",
+    "trl",
+    "transformers",
+    "datasets",
+    "accelerate",
+    "huggingface_hub",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "ruff",
+    "pdoc",
+]
+ollama = [
+    "ollama",
+]
+logging = [
+    "tensorboard",
+    "wandb",
+]
+dpo = [
+    "peft",
+]
+all = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "ruff",
+    "ollama",
+    "pdoc",
+    "tensorboard",
+    "wandb",
+    "peft",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autotrain*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pdoc]
+docformat = "google"
+output-directory = "docs/html"
+
+[tool.mypy]
+explicit_package_bases = true
