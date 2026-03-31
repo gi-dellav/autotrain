@@ -158,6 +158,21 @@ class TestApplyChatTemplate:
         result = apply_chat_template(messages, add_generation_prompt=True)
         assert "Hello" in result
 
+    def test_apply_chat_tokenize(self):
+        class MockTokenizer:
+            def encode(self, text, **kwargs):
+                return [1, 2, 3]
+
+        messages = [{"role": "user", "content": "Hello"}]
+        tokenizer = MockTokenizer()
+        result = apply_chat_template(messages, tokenize=True, tokenizer=tokenizer)
+        assert result == [1, 2, 3]
+
+    def test_apply_chat_tokenize_no_tokenizer(self):
+        messages = [{"role": "user", "content": "Hello"}]
+        with pytest.raises(ValueError, match="tokenizer must be provided"):
+            apply_chat_template(messages, tokenize=True)
+
 
 class TestNewTemplates:
     def test_llama31_template(self):

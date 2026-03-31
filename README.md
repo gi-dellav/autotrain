@@ -42,7 +42,7 @@ from autotrain import Model
 
 # Initialize model
 model = Model(
-    model_name="unsloth/llama-3-8b-bnb-4bit",
+    model_name="unsloth/Qwen3.5-27B-GGUF",
     sample_multiplier=2
 )
 
@@ -60,9 +60,9 @@ model.train(k=100, i=10)
 ```python
 from autotrain import Model, Expert
 
-model = Model(model_name="unsloth/llama-3-8b-bnb-4bit")
-expert1 = Expert(model_name="gpt-4", production_rate=0.5)
-expert2 = Expert(model_name="claude-3-sonnet", production_rate=0.25)
+model = Model(model_name="unsloth/Qwen3.5-27B-GGUF")
+expert1 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=0.5)
+expert2 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=0.25)
 
 model.train(k=100, i=10, experts=[expert1, expert2])
 ```

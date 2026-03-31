@@ -260,15 +260,18 @@ def _call_model_with_tools(
     tool_schemas = tools or model._tools.get_schemas()
 
     try:
-        from unsloth.chat_templates import get_chat_template
+        from autotrain.templates import apply_chat_template, get_chat_template
 
-        chat_template = get_chat_template(
+        # Apply template to tokenizer (returns tokenizer)
+        tokenizer = get_chat_template(
             model._tokenizer,
             chat_template="chatml",
         )
 
-        formatted = chat_template.apply_chat_template(
+        # Apply chat template to messages
+        formatted = apply_chat_template(
             messages,
+            tokenizer=tokenizer,
             tokenize=False,
             add_generation_prompt=True,
         )

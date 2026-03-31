@@ -135,29 +135,23 @@ class DatasetFormatter:
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool = False,
         add_eos_token: bool = True,
-    ) -> str:
+        tokenize: bool = False,
+        tokenizer: Any = None,
+    ) -> Union[str, List[int]]:
         """Apply chat template to conversation messages.
 
         This method follows Unsloth's API for applying chat templates.
         Supports both ChatML format (role/content) and ShareGPT format (from/value).
 
         Args:
-            messages: List of message dictionaries. Supports two formats:
-                - ChatML: [{"role": "user", "content": "Hello"}, ...]
-                - ShareGPT: [{"from": "human", "value": "Hello"}, ...]
+            messages: List of message dictionaries.
             add_generation_prompt: If True, adds assistant prefix after last user message
             add_eos_token: If True, adds EOS token after assistant messages
+            tokenize: If True, returns token IDs instead of string
+            tokenizer: HuggingFace/Unsloth tokenizer (required if tokenize=True)
 
         Returns:
-            Formatted string with template applied
-
-        Examples:
-            >>> formatter = DatasetFormatter.from_model_name("meta-llama/Llama-3-8b")
-            >>> messages = [
-            ...     {"role": "user", "content": "Hello"},
-            ...     {"role": "assistant", "content": "Hi, how can I help?"}
-            ... ]
-            >>> result = formatter.apply_chat_template(messages)
+            Formatted string with template applied, or list of token IDs
         """
         from autotrain.templates import apply_chat_template
 
@@ -167,6 +161,8 @@ class DatasetFormatter:
             template=self.template,
             add_generation_prompt=add_generation_prompt,
             add_eos_token=add_eos_token,
+            tokenize=tokenize,
+            tokenizer=tokenizer,
         )
 
     def convert_to_chatml(

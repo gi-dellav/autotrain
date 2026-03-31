@@ -28,13 +28,13 @@ class VisionModel:
     Producer -> Solver -> Splitter -> Reviewer -> Fine-tune
 
     Example usage:
-        model = VisionModel(model_name="unsloth/Qwen2.5-VL-7B-GGUF")
+        model = VisionModel(model_name="unsloth/Qwen3.5-27B-GGUF")
         model.train(k=10, i=5, experts=[expert])
     """
 
     def __init__(
         self,
-        model_name: str = "unsloth/Qwen3.5-35B-A3B-GGUF",
+        model_name: str = "unsloth/Qwen3.5-27B-GGUF",
         sample_multiplier: int = 2,
         inference_config: Optional[InferenceConfig] = None,
         prompts: Optional[Prompts] = None,
@@ -48,7 +48,7 @@ class VisionModel:
         Initialize the Vision Model.
 
         Args:
-            model_name: Name/path of the unsloth VLM to load (default: unsloth/Qwen3.5-35B-A3B-GGUF)
+            model_name: Name/path of the unsloth VLM to load (default: unsloth/Qwen3.5-27B-GGUF)
             sample_multiplier: Number of samples to generate per input (default: 2)
             inference_config: Configuration for inference properties
             prompts: Custom prompts for each component

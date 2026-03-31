@@ -112,15 +112,15 @@ class Expert:
 
     Supports multiple experts with weighted production rates in the Model class.
     Example usage:
-        expert1 = Expert(model_name="gpt-4", production_rate=0.5)
-        expert2 = Expert(model_name="claude-3", production_rate=0.25)
+        expert1 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=0.5)
+        expert2 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=0.25)
         model.train(experts=[expert1, expert2])
         # This means: 50% from expert1, 25% from expert2, 25% from model
     """
 
     def __init__(
         self,
-        model_name: str = "qwen/qwen3.5-397b-a17b",
+        model_name: str = "unsloth/Qwen3.5-27B-GGUF",
         production_rate: float = 0.5,
         inference_config: Optional["InferenceConfig"] = None,
         prompts: Optional[ExpertPrompts] = None,
@@ -136,7 +136,7 @@ class Expert:
         Initialize the Expert.
 
         Args:
-            model_name: litellm model name (e.g., "gpt-4", "claude-3", "ollama/llama2") (default: qwen/qwen3.5-397b-a17b)
+            model_name: litellm model name (e.g., "unsloth/Qwen3.5-27B-GGUF") (default: unsloth/Qwen3.5-27B-GGUF)
             production_rate: Rate at which expert produces samples vs student model
                             (0.5 = 50% expert, 50% student when used alone)
             inference_config: Configuration for inference properties
@@ -1070,13 +1070,13 @@ class VisionExpert(Expert):
     Uses litellm with OpenRouter as default provider.
 
     Example usage:
-        expert = VisionExpert(model_name="qwen/qwen2.5-vl-7b-instruct", production_rate=0.5)
+        expert = VisionExpert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=0.5)
         model.train(experts=[expert])
     """
 
     def __init__(
         self,
-        model_name: str = "qwen/qwen3.5-397b-a17b",
+        model_name: str = "unsloth/Qwen3.5-27B-GGUF",
         production_rate: float = 0.5,
         inference_config: Optional["InferenceConfig"] = None,
         prompts: Optional[ExpertPrompts] = None,
@@ -1092,7 +1092,7 @@ class VisionExpert(Expert):
         Initialize the Vision Expert.
 
         Args:
-            model_name: litellm model name for VLM (default: qwen/qwen3.5-397b-a17b)
+            model_name: litellm model name for VLM (default: unsloth/Qwen3.5-27B-GGUF)
             production_rate: Rate at which expert produces samples vs student model
             inference_config: Configuration for inference properties
             prompts: Custom prompts for expert operations

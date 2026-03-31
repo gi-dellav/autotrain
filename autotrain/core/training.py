@@ -79,16 +79,18 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
         # Prepare dataset
         train_dataset = Dataset.from_list(model._training_data)
 
+        from autotrain.templates import format_sample
+
         # Format dataset for instruction tuning
         def format_example(example):
-            if hasattr(model, "_template") and model._template:
-                text = model._template.format_training_sample(
-                    instruction=example["input"],
-                    output=example["output"],
+            return {
+                "text": format_sample(
+                    instruction=example.get("input", ""),
+                    output=example.get("output", ""),
+                    template=model._template,
+                    model_name=model.model_name,
                 )
-            else:
-                text = f"### Instruction:\n{example['input']}\n\n### Response:\n{example['output']}"
-            return {"text": text}
+            }
 
         train_dataset = train_dataset.map(format_example)
 
@@ -201,7 +203,7 @@ def train(
     Example:
         from autotrain.tools import python, calculator
 
-        model = Model(model_name="unsloth/Qwen3-Coder-Next-GGUF")
+        model = Model(model_name="unsloth/Qwen3.5-27B-GGUF")
         model.load_model()
 
         # Train with tool calling enabled

@@ -67,7 +67,7 @@ class TestExpert:
         """Test Expert initialization with defaults."""
         expert = Expert()
 
-        assert expert.model_name == "qwen/qwen3.5-397b-a17b"
+        assert expert.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert expert.production_rate == 0.5
         assert expert.api_key is None
         assert expert.api_base is None
@@ -80,7 +80,7 @@ class TestExpert:
         prompts = ExpertPrompts(produce="Custom")
 
         expert = Expert(
-            model_name="claude-3",
+            model_name="unsloth/Qwen3.5-27B-GGUF",
             production_rate=0.75,
             inference_config=config,
             prompts=prompts,
@@ -88,7 +88,7 @@ class TestExpert:
             api_base="https://custom.api.com",
         )
 
-        assert expert.model_name == "claude-3"
+        assert expert.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert expert.production_rate == 0.75
         assert expert.api_key == "test-key"
         assert expert.api_base == "https://custom.api.com"
@@ -101,7 +101,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content='{"input": "What is 2+2?", "output": "4"}'))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         samples = expert.produce(task="math problems", count=3)
 
         assert len(samples) == 3
@@ -114,14 +114,14 @@ class TestExpert:
             MagicMock(message=MagicMock(content='{"input": "test", "output": "result"}'))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         samples = expert.produce(task="test", count=1)
 
         assert samples[0].metadata["source"] == "expert"
 
     def test_expert_solve(self, mock_litellm):
         """Test Expert.solve solves problems."""
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.solve("What is 2+2?")
 
         assert result == "Mocked response from LLM"
@@ -129,7 +129,7 @@ class TestExpert:
 
     def test_expert_solve_with_system_prompt(self, mock_litellm):
         """Test Expert.solve with custom system prompt."""
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         expert.solve(
             "What is 2+2?",
             system_prompt="You are a math expert",
@@ -144,7 +144,7 @@ class TestExpert:
 
     def test_expert_solve_with_temperature(self, mock_litellm):
         """Test Expert.solve with custom temperature."""
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         expert.solve("What is 2+2?", temperature=0.9)
 
         call_args = mock_litellm.call_args
@@ -152,7 +152,7 @@ class TestExpert:
 
     def test_expert_solve_batch(self, mock_litellm):
         """Test Expert.solve_batch solves multiple problems."""
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         results = expert.solve_batch(["Problem 1", "Problem 2", "Problem 3"])
 
         assert len(results) == 3
@@ -162,7 +162,7 @@ class TestExpert:
         """Test Expert.select chooses from options."""
         mock_litellm.return_value.choices = [MagicMock(message=MagicMock(content="2"))]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         samples = ["Option 1", "Option 2", "Option 3"]
         selected = expert.select(samples)
 
@@ -174,7 +174,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content="invalid response"))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         samples = ["Option 1", "Option 2"]
         selected = expert.select(samples)
 
@@ -187,7 +187,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content="Score: 8/10. Good response."))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         sample = Sample(input_data="input", output_data="output")
         review = expert.review(sample)
 
@@ -199,7 +199,7 @@ class TestExpert:
         """Test Expert.review with custom criteria."""
         mock_litellm.return_value.choices = [MagicMock(message=MagicMock(content="Score: 9/10"))]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         sample = Sample(input_data="input", output_data="output")
         expert.review(sample, criteria="accuracy and clarity")
 
@@ -211,7 +211,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content="YES, this is correct"))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.check("What is 2+2?", "4")
 
         assert result["is_correct"] is True
@@ -223,14 +223,14 @@ class TestExpert:
             MagicMock(message=MagicMock(content="NO, this is incorrect"))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.check("What is 2+2?", "5")
 
         assert result["is_correct"] is False
 
     def test_expert_check_strict(self, mock_litellm):
         """Test Expert.check with strict mode."""
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.check("input", "output", strict=True)
 
         assert result["strict"] is True
@@ -241,7 +241,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content="A is better because..."))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.compare("input", "output A", "output B")
 
         assert result["winner"] == "a"
@@ -253,7 +253,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content="TIE - both are equally good"))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.compare("input", "output A", "output B")
 
         assert result["winner"] == "tie"
@@ -262,7 +262,7 @@ class TestExpert:
         """Test Expert.rate provides numerical rating."""
         mock_litellm.return_value.choices = [MagicMock(message=MagicMock(content="Score: 8/10"))]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         result = expert.rate("input", "output", scale=10)
 
         assert "score" in result
@@ -273,7 +273,7 @@ class TestExpert:
         """Test Expert.rate with multiple criteria."""
         mock_litellm.return_value.choices = [MagicMock(message=MagicMock(content="Score: 9/10"))]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         expert.rate(
             "input",
             "output",
@@ -309,7 +309,7 @@ class TestExpert:
 
     def test_expert_caching(self, mock_litellm):
         """Test Expert caches responses when enabled."""
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         expert.enable_cache()
 
         # First call
@@ -384,12 +384,12 @@ class TestExpert:
 
     def test_expert_get_info(self):
         """Test Expert.get_info."""
-        expert = Expert(model_name="gpt-4", production_rate=0.75)
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=0.75)
         expert.add_sample("input", "output")
 
         info = expert.get_info()
 
-        assert info["model_name"] == "gpt-4"
+        assert info["model_name"] == "unsloth/Qwen3.5-27B-GGUF"
         assert info["production_rate"] == 0.75
         assert info["samples_count"] == 1
         assert "cache_enabled" in info
@@ -400,7 +400,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content='{"input": "test", "output": "result"}'))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         expert.produce(task="test", count=2)
 
         output_path = temp_dir / "dataset.json"
@@ -419,7 +419,7 @@ class TestExpert:
             MagicMock(message=MagicMock(content='{"input": "test", "output": "result"}'))
         ]
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
         expert.produce(task="test", count=2)
 
         output_path = temp_dir / "dataset.jsonl"
@@ -510,14 +510,14 @@ class TestExpertToolMethods:
 
     def test_expert_add_tool(self):
         """Test adding tool to Expert."""
-        from autotrain.tools import python, terminal
+        from autotrain.tools import python, web_search
 
         expert = Expert()
         expert.add_tool(python)
-        expert.add_tool(terminal)
+        expert.add_tool(web_search)
 
         assert expert.has_tool("python")
-        assert expert.has_tool("terminal")
+        assert expert.has_tool("web_search")
 
     def test_expert_remove_tool(self):
         """Test removing tool from Expert."""
@@ -532,11 +532,11 @@ class TestExpertToolMethods:
 
     def test_expert_clear_tools(self):
         """Test clearing all tools from Expert."""
-        from autotrain.tools import python, terminal
+        from autotrain.tools import python, web_search
 
         expert = Expert()
         expert.add_tool(python)
-        expert.add_tool(terminal)
+        expert.add_tool(web_search)
 
         assert len(expert.list_tools()) == 2
         expert.clear_tools()
@@ -544,34 +544,34 @@ class TestExpertToolMethods:
 
     def test_expert_list_tools(self):
         """Test listing tools on Expert."""
-        from autotrain.tools import python, terminal
+        from autotrain.tools import python, web_search
 
         expert = Expert()
         expert.add_tool(python)
-        expert.add_tool(terminal)
+        expert.add_tool(web_search)
 
         tools = expert.list_tools()
         assert "python" in tools
-        assert "terminal" in tools
+        assert "web_search" in tools
 
     def test_expert_get_tool(self):
         """Test getting tool from Expert."""
-        from autotrain.tools import terminal
+        from autotrain.tools import web_search
 
         expert = Expert()
-        expert.add_tool(terminal)
+        expert.add_tool(web_search)
 
-        tool = expert.get_tool("terminal")
+        tool = expert.get_tool("web_search")
         assert tool is not None
-        assert tool.name == "terminal"
+        assert tool.name == "web_search"
 
     def test_expert_get_tool_schemas(self):
         """Test getting tool schemas from Expert."""
-        from autotrain.tools import python, terminal
+        from autotrain.tools import python, web_search
 
         expert = Expert()
         expert.add_tool(python)
-        expert.add_tool(terminal)
+        expert.add_tool(web_search)
 
         schemas = expert.get_tool_schemas()
         assert len(schemas) == 2

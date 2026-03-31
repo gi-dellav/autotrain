@@ -46,7 +46,7 @@ class TestTrainingPipeline:
             sample_multiplier=1,
         )
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         model._fine_tune = MagicMock()
 
@@ -155,8 +155,8 @@ class TestTrainingPipeline:
             sample_multiplier=1,
         )
 
-        expert1 = Expert(model_name="gpt-4", api_key="key1", production_rate=0.5)
-        expert2 = Expert(model_name="claude-3", api_key="key2", production_rate=0.3)
+        expert1 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="key1", production_rate=0.5)
+        expert2 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="key2", production_rate=0.3)
 
         model._fine_tune = MagicMock()
 
@@ -178,7 +178,7 @@ class TestTrainingPipeline:
             enable_checker=True,
         )
 
-        expert = Expert(model_name="gpt-4", production_rate=1.0, api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=1.0, api_key="test-key")
         model._fine_tune = MagicMock()
 
         summary = model.train(

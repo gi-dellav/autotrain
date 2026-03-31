@@ -74,9 +74,7 @@ from autotrain.tools import (
     create_tool,
     get_tool_schema,
     python,
-    terminal,
     web_search,
-    multiply_number,
     DEFAULT_TOOLS,
 )
 
@@ -137,8 +135,6 @@ __all__ = [
     "create_tool",
     "get_tool_schema",
     "python",
-    "terminal",
     "web_search",
-    "multiply_number",
     "DEFAULT_TOOLS",
 ]

@@ -138,7 +138,7 @@ def benchmark_samples():
 def expert_config():
     """Default expert configuration for tests."""
     return {
-        "model_name": "gpt-4",
+        "model_name": "unsloth/Qwen3.5-27B-GGUF",
         "api_key": "test-api-key",
         "production_rate": 0.5,
     }
@@ -148,7 +148,7 @@ def expert_config():
 def model_config():
     """Default model configuration for tests."""
     return {
-        "model_name": "unsloth/llama-3-8b-bnb-4bit",
+        "model_name": "unsloth/Qwen3.5-27B-GGUF",
         "sample_multiplier": 2,
     }
 

@@ -112,7 +112,7 @@ class TestVisionExpert:
 
         expert = VisionExpert()
 
-        assert expert.model_name == "qwen/qwen3.5-397b-a17b"
+        assert expert.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert expert.production_rate == 0.5
         assert expert.vision_model is True
         assert expert._vision_samples == []
@@ -127,14 +127,14 @@ class TestVisionExpert:
         prompts = ExpertPrompts(produce="Custom vision produce")
 
         expert = VisionExpert(
-            model_name="qwen/qwen2.5-vl-7b-instruct",
+            model_name="unsloth/Qwen3.5-27B-GGUF",
             production_rate=0.75,
             inference_config=config,
             prompts=prompts,
             api_key="test-key",
         )
 
-        assert expert.model_name == "qwen/qwen2.5-vl-7b-instruct"
+        assert expert.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert expert.production_rate == 0.75
         assert expert.vision_model is True
         assert expert.api_key == "test-key"
@@ -366,7 +366,7 @@ class TestVisionModel:
 
         model = VisionModel()
 
-        assert model.model_name == "unsloth/Qwen3.5-35B-A3B-GGUF"
+        assert model.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert model.sample_multiplier == 2
         assert model._is_model_loaded is False
         assert model._samples == []
@@ -381,13 +381,13 @@ class TestVisionModel:
         prompts = Prompts(producer="Custom")
 
         model = VisionModel(
-            model_name="unsloth/Qwen2.5-VL-7B-GGUF",
+            model_name="unsloth/Qwen3.5-27B-GGUF",
             sample_multiplier=3,
             inference_config=config,
             prompts=prompts,
         )
 
-        assert model.model_name == "unsloth/Qwen2.5-VL-7B-GGUF"
+        assert model.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert model.sample_multiplier == 3
         assert model.inference_config.temperature == 0.9
         assert model.prompts.producer == "Custom"

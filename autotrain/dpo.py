@@ -30,7 +30,7 @@ class DPOConfig:
     label_smoothing: float = 0.0
     reference_free: bool = False
     f_divergence_type: str = "reverse_kl"
-    reference_model_name: Optional[str] = "unsloth/Qwen3.5-9B-GGUF"
+    reference_model_name: Optional[str] = "unsloth/Qwen3.5-27B-GGUF"
 
     # Training parameters
     epochs: int = 1
@@ -84,7 +84,7 @@ class DPOTrainer:
     based on pairs of chosen/rejected responses.
 
     Usage:
-        model = Model("unsloth/llama-3-8b-bnb-4bit")
+        model = Model("unsloth/Qwen3.5-27B-GGUF")
         dpo_trainer = DPOTrainer(model, dpo_config)
 
         # Add preference data

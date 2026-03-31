@@ -372,7 +372,7 @@ class TestDPOWithExpert:
         """Test generating preference samples with expert."""
         model = Model()
         trainer = DPOTrainer(model)
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         # Mock comparison to always prefer first response
         mock_litellm.return_value.choices = [MagicMock(message=MagicMock(content="A is better"))]

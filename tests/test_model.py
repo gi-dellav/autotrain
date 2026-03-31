@@ -178,7 +178,7 @@ class TestModel:
         prompts = Prompts(producer="Custom prompt")
 
         model = Model(
-            model_name="unsloth/mistral-7b-bnb-4bit",
+            model_name="unsloth/Qwen3.5-27B-GGUF",
             sample_multiplier=3,
             inference_config=config,
             prompts=prompts,
@@ -186,7 +186,7 @@ class TestModel:
             checkpoint_dir="./test_checkpoints",
         )
 
-        assert model.model_name == "unsloth/mistral-7b-bnb-4bit"
+        assert model.model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert model.sample_multiplier == 3
         assert model.enable_checker is True
         assert model.inference_config.temperature == 0.9
@@ -270,7 +270,7 @@ class TestModel:
     def test_add_expert(self, mock_litellm):
         """Test adding expert to model."""
         model = Model()
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         # Need to init components first
         model._init_components()
@@ -282,8 +282,8 @@ class TestModel:
     def test_remove_expert(self):
         """Test removing expert from model."""
         model = Model()
-        expert1 = Expert(model_name="gpt-4")
-        expert2 = Expert(model_name="claude-3")
+        expert1 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
+        expert2 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         model._init_components()
         model.add_expert(expert1, production_weight=0.5)
@@ -297,7 +297,7 @@ class TestModel:
     def test_clear_experts(self):
         """Test clearing all experts from model."""
         model = Model()
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         model._init_components()
         model.add_expert(expert, production_weight=0.5)
@@ -382,7 +382,7 @@ class TestModel:
             sample_multiplier=1,
         )
 
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         # Mock the fine-tune method
         model._fine_tune = MagicMock()
@@ -536,16 +536,15 @@ class TestModelToolMethods:
 
     def test_add_tool_from_builtin(self):
         """Test adding built-in tool to Model."""
-        from autotrain.tools import python, terminal
-
+        from autotrain.tools import python, web_search
         model = Model()
         model.add_tool(python)
-        model.add_tool(terminal)
+        model.add_tool(web_search)
 
         assert model.has_tool("python")
-        assert model.has_tool("terminal")
+        assert model.has_tool("web_search")
         assert "python" in model.list_tools()
-        assert "terminal" in model.list_tools()
+        assert "web_search" in model.list_tools()
 
     def test_remove_tool(self):
         """Test removing tool from Model."""
@@ -560,11 +559,10 @@ class TestModelToolMethods:
 
     def test_clear_tools(self):
         """Test clearing all tools from Model."""
-        from autotrain.tools import python, terminal
-
+        from autotrain.tools import python, web_search
         model = Model()
         model.add_tool(python)
-        model.add_tool(terminal)
+        model.add_tool(web_search)
 
         assert len(model.list_tools()) == 2
         model.clear_tools()
@@ -572,14 +570,14 @@ class TestModelToolMethods:
 
     def test_get_tool(self):
         """Test getting tool from Model."""
-        from autotrain.tools import terminal
+        from autotrain.tools import web_search
 
         model = Model()
-        model.add_tool(terminal)
+        model.add_tool(web_search)
 
-        tool = model.get_tool("terminal")
+        tool = model.get_tool("web_search")
         assert tool is not None
-        assert tool.name == "terminal"
+        assert tool.name == "web_search"
 
     def test_create_tool_decorator(self):
         """Test create_tool decorator on Model."""

@@ -205,7 +205,7 @@ class TestAutoTrainLogger:
         logger = AutoTrainLogger(config=config)
 
         config_dict = {
-            "model_name": "llama-3-8b",
+            "model_name": "unsloth/Qwen3.5-27B-GGUF",
             "learning_rate": 1e-4,
             "batch_size": 4,
         }

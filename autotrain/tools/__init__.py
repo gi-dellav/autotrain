@@ -7,7 +7,7 @@ Example usage:
     from autotrain import Model
     from autotrain.tools import python, calculator
 
-    model = Model(model_name="unsloth/Qwen3-Coder-Next-GGUF")
+    model = Model(model_name="unsloth/Qwen3.5-27B-GGUF")
     model.add_tool(python)
     model.add_tool(calculator)
 
@@ -22,8 +22,8 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Union
 from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Union
 
 
 @dataclass
@@ -307,6 +307,8 @@ def python(code: str) -> str:
         return f"Error: {type(e).__name__}: {str(e)}"
 
 
+# Disabled for security reason
+'''
 def terminal(command: str, working_dir: Optional[str] = None) -> str:
     """
     Execute a terminal command (with safety restrictions).
@@ -321,20 +323,20 @@ def terminal(command: str, working_dir: Optional[str] = None) -> str:
         Command output as string
     """
     dangerous_patterns = [
-        r"\brm\s+-rf\b",
-        r"\brm\s+-r\b",
+        r"\brm\\s+-rf\b",
+        r"\brm\\s+-r\b",
         r"\bsudo\b",
         r"\bdd\b",
-        r"\bchmod\s+777\b",
-        r"\bchmod\s+-R\b",
+        r"\bchmod\\s+777\b",
+        r"\bchmod\\s+-R\b",
         r"\bmkfs\b",
         r"\bfdisk\b",
         r"\bshutdown\b",
         r"\breboot\b",
         r"\bhalt\b",
         r"\bpoweroff\b",
-        r"\bmkdir\s+-p\s+/",
-        r"\:(){ :\|:& };:",  # Fork bomb
+        r"\bmkdir\\s+-p\\s+/",
+        r"\\:(){ :\\|:& };:",  # Fork bomb
     ]
 
     for pattern in dangerous_patterns:
@@ -359,9 +361,9 @@ def terminal(command: str, working_dir: Optional[str] = None) -> str:
         return "Error: Command timed out after 30 seconds"
     except Exception as e:
         return f"Error: {type(e).__name__}: {str(e)}"
+'''
 
-
-def web_search(query: str, max_results: int = 5) -> str:
+def web_search(query: str, max_results: int = 5, model: str = "openrouter/google/gemini-3.0-flash-preview") -> str:
     """
     Search the web for information.
 
@@ -378,7 +380,7 @@ def web_search(query: str, max_results: int = 5) -> str:
         from litellm import completion
 
         response = completion(
-            model="google/gemini-2.0-flash-exp",
+            model=model,
             messages=[
                 {
                     "role": "user",
@@ -396,26 +398,10 @@ def web_search(query: str, max_results: int = 5) -> str:
         return f"Error: {type(e).__name__}: {str(e)}"
 
 
-def multiply_number(a: Union[float, str], b: Union[float, str]) -> float:
-    """
-    Multiply two numbers.
-
-    Args:
-        a: First number
-        b: Second number
-
-    Returns:
-        Product of the two numbers
-    """
-    return float(a) * float(b)
-
-
 # Create default tool registry with built-in tools
 DEFAULT_TOOLS = ToolCallingConfig()
 DEFAULT_TOOLS.add_tool(python)
-DEFAULT_TOOLS.add_tool(terminal)
 DEFAULT_TOOLS.add_tool(web_search)
-DEFAULT_TOOLS.add_tool(multiply_number)
 
 
 __all__ = [
@@ -424,8 +410,6 @@ __all__ = [
     "create_tool",
     "get_tool_schema",
     "python",
-    "terminal",
     "web_search",
-    "multiply_number",
     "DEFAULT_TOOLS",
 ]

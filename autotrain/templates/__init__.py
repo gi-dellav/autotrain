@@ -189,6 +189,7 @@ def apply_chat_template(
     tokenize: bool = False,
     add_bos_token: bool = True,
     add_eos_token: bool = True,
+    tokenizer: Any = None,
 ) -> Union[str, List[int]]:
     """Apply chat template to a list of messages.
 
@@ -203,27 +204,13 @@ def apply_chat_template(
         role_mapping: Optional mapping for role names (e.g., {"human": "user", "gpt": "assistant"})
         add_generation_prompt: If True, adds assistant prompt prefix after last user message.
                               Useful for inference to prompt the model to start generating.
-        tokenize: If True, returns token IDs instead of string (requires tokenizer in template).
+        tokenize: If True, returns token IDs instead of string (requires tokenizer argument).
         add_bos_token: If True, adds beginning-of-sequence token.
         add_eos_token: If True, adds end-of-sequence token after assistant messages.
+        tokenizer: HuggingFace/Unsloth tokenizer. Required if tokenize=True.
 
     Returns:
         Formatted string with template applied, or list of token IDs if tokenize=True.
-
-    Examples:
-        >>> from autotrain.templates import apply_chat_template
-        >>> messages = [
-        ...     {"role": "user", "content": "Hello"},
-        ...     {"role": "assistant", "content": "Hi, how can I help?"}
-        ... ]
-        >>> result = apply_chat_template(messages, add_generation_prompt=False)
-
-        >>> # ShareGPT format
-        >>> messages_sg = [
-        ...     {"from": "human", "value": "Hello"},
-        ...     {"from": "gpt", "value": "Hi there"}
-        ... ]
-        >>> result = apply_chat_template(messages_sg, role_mapping={"human": "user", "gpt": "assistant"})
     """
     if template is None:
         template = get_alpaca_template()
@@ -267,6 +254,11 @@ def apply_chat_template(
     if add_bos_token and template.system_template and "{bos_token}" in template.system_template:
         result = template.system_template.split("{system}")[0].replace("{bos_token}", "") + result
 
+    if tokenize:
+        if tokenizer is None:
+            raise ValueError("tokenizer must be provided when tokenize=True")
+        return tokenizer.encode(result, add_special_tokens=False)
+
     return result
 
 
@@ -279,7 +271,9 @@ def _apply_role_mapping(
     for msg in messages:
         role = msg.get("role", msg.get("from", "user"))
         mapped_role = role_mapping.get(role, role)
-        mapped.append({**msg, "role": mapped_role})
+        # Ensure content/value is preserved in the mapped message
+        content = msg.get("content", msg.get("value", ""))
+        mapped.append({**msg, "role": mapped_role, "content": content})
     return mapped
 
 
@@ -310,30 +304,21 @@ def standardize_sharegpt(
 
     Returns:
         List of conversations in ChatML format with 'role' and 'content' keys.
-
-    Examples:
-        >>> from autotrain.templates import standardize_sharegpt
-        >>> data = [
-        ...     [{"from": "human", "value": "Hello"},
-        ...      {"from": "gpt", "value": "Hi, how can I help?"}]
-        ... ]
-        >>> standardized = standardize_sharegpt(data)
-        >>> print(standardized[0])
-        [{'role': 'user', 'content': 'Hello'}, {'role': 'assistant', 'content': 'Hi, how can I help?'}]
-
-        >>> # Custom role mapping
-        >>> data_custom = [
-        ...     [{"from": "user", "value": "Hello"},
-        ...      {"from": "assistant", "value": "Hi there"}]
-        ... ]
-        >>> standardized = standardize_sharegpt(data_custom,
-        ...                                    role_mapping={"user": "user", "assistant": "assistant"})
     """
     if role_mapping is None:
         role_mapping = {"human": "user", "gpt": "assistant"}
 
     if column_mapping is None:
         column_mapping = {"from": "from", "value": "value"}
+
+    # Try to use Unsloth's implementation first
+    try:
+        from unsloth import standardize_sharegpt as unsloth_standardize_sharegpt
+
+        # Unsloth's version is highly optimized
+        return unsloth_standardize_sharegpt(data)
+    except (ImportError, Exception):
+        pass
 
     standardized = []
 
@@ -371,16 +356,6 @@ def to_sharegpt(
 
     Returns:
         List of conversations in ShareGPT format with 'from' and 'value' keys.
-
-    Examples:
-        >>> from autotrain.templates import to_sharegpt
-        >>> data = [
-        ...     [{"role": "user", "content": "Hello"},
-        ...      {"role": "assistant", "content": "Hi there"}]
-        ... ]
-        >>> sharegpt = to_sharegpt(data)
-        >>> print(sharegpt[0])
-        [{'from': 'human', 'value': 'Hello'}, {'from': 'gpt', 'value': 'Hi there'}]
     """
     if column_mapping is None:
         column_mapping = {"role": "from", "content": "value"}
@@ -423,19 +398,6 @@ def merge_conversations(
 
     Returns:
         List of merged multi-turn conversations
-
-    Examples:
-        >>> from autotrain.templates import merge_conversations
-        >>> conversations = [
-        ...     [{"role": "user", "content": "What is 2+2?"},
-        ...      {"role": "assistant", "content": "It's 4!"}],
-        ...     [{"role": "user", "content": "Thanks!"},
-        ...      {"role": "assistant", "content": "You're welcome!"}],
-        ...     [{"role": "user", "content": "Bye!"},
-        ...      {"role": "assistant", "content": "Goodbye!"}]
-        ... ]
-        >>> merged = merge_conversations(conversations, extension_length=3)
-        >>> # Results in one conversation with 6 messages (3 turns merged)
     """
     if seed is not None:
         random.seed(seed)
@@ -483,20 +445,22 @@ def get_chat_template(
 
     Returns:
         Tokenizer with chat template applied
-
-    Examples:
-        >>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3-8b")
-        >>> tokenizer = get_chat_template(tokenizer, chat_template="llama-3")
-
-        >>> # With ShareGPT mapping
-        >>> tokenizer = get_chat_template(
-        ...     tokenizer, chat_template="chatml",
-        ...     mapping={"role": "from", "content": "value"}, map_eos_token=True
-        ... )
     """
-    if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
-        return tokenizer
+    # Try to use Unsloth's native implementation first for maximum correctness
+    try:
+        from unsloth.chat_templates import get_chat_template as unsloth_get_chat_template
 
+        return unsloth_get_chat_template(
+            tokenizer=tokenizer,
+            chat_template=chat_template,
+            mapping=mapping,
+            map_eos_token=map_eos_token,
+            map_bos_token=map_bos_token,
+        )
+    except (ImportError, Exception):
+        pass
+
+    # Fallback to local implementation
     template = get_template(chat_template)
 
     if hasattr(tokenizer, "apply_chat_template"):

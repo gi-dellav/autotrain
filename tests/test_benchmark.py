@@ -161,7 +161,7 @@ class TestBenchmark:
         benchmark = Benchmark()
 
         assert benchmark.name == "default"
-        assert benchmark.expert_model_name == "gpt-4"
+        assert benchmark.expert_model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert benchmark.sample_count == 0
         assert benchmark.best_metrics is None
 
@@ -169,12 +169,12 @@ class TestBenchmark:
         """Test Benchmark initialization with custom params."""
         benchmark = Benchmark(
             name="math_benchmark",
-            expert_model_name="claude-3",
+            expert_model_name="unsloth/Qwen3.5-27B-GGUF",
             expert_api_key="test-key",
         )
 
         assert benchmark.name == "math_benchmark"
-        assert benchmark.expert_model_name == "claude-3"
+        assert benchmark.expert_model_name == "unsloth/Qwen3.5-27B-GGUF"
         assert benchmark.expert_api_key == "test-key"
 
     def test_add_sample(self):

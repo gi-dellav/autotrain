@@ -55,7 +55,7 @@ class Benchmark:
             thresholds: Custom thresholds for each evaluation mode (0-1)
         """
         self.name = name
-        self.expert_model_name = expert_model_name or "gpt-4"
+        self.expert_model_name = expert_model_name or "unsloth/Qwen3.5-27B-GGUF"
         self.expert_api_key = expert_api_key
         self.expert_api_base = expert_api_base
 

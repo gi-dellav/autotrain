@@ -94,7 +94,7 @@ class TestSolver:
         """Test Solver initialization with experts."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         solver = Solver(
             model=mock_model,
@@ -116,7 +116,7 @@ class TestSolver:
             inference_config=config,
         )
 
-        expert = Expert(model_name="claude-3")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
         solver.add_expert(expert, weight=0.5)
 
         assert len(solver.experts) == 1
@@ -126,8 +126,8 @@ class TestSolver:
         """Test removing expert from Solver."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert1 = Expert(model_name="gpt-4")
-        expert2 = Expert(model_name="claude-3")
+        expert1 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
+        expert2 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         solver = Solver(
             model=mock_model,
@@ -146,7 +146,7 @@ class TestSolver:
         """Test clearing all experts from Solver."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         solver = Solver(
             model=mock_model,
@@ -181,7 +181,7 @@ class TestSolver:
         """Test Solver.solve with expert uses expert."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         solver = Solver(
             model=mock_model,
@@ -204,8 +204,8 @@ class TestSolver:
         """Test weight normalization in Solver."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert1 = Expert(model_name="gpt-4")
-        expert2 = Expert(model_name="claude-3")
+        expert1 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
+        expert2 = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         solver = Solver(
             model=mock_model,
@@ -244,7 +244,7 @@ class TestSplitter:
         """Test adding expert to Splitter."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         splitter = Splitter(
             model=mock_model,
@@ -335,7 +335,7 @@ class TestReviewer:
         """Test adding expert to Reviewer."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         reviewer = Reviewer(
             model=mock_model,
@@ -369,7 +369,7 @@ class TestReviewer:
         """Test Reviewer.review with expert."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         reviewer = Reviewer(
             model=mock_model,
@@ -408,7 +408,7 @@ class TestChecker:
         """Test adding expert to Checker."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         checker = Checker(
             model=mock_model,
@@ -445,7 +445,7 @@ class TestChecker:
         """Test Checker.verify with expert."""
         mock_model = MagicMock()
         config = InferenceConfig()
-        expert = Expert(model_name="gpt-4", api_key="test-key")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
 
         checker = Checker(
             model=mock_model,
@@ -466,7 +466,7 @@ class TestExpertWeight:
 
     def test_expert_weight_valid(self):
         """Test ExpertWeight with valid weight."""
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
         weight = ExpertWeight(expert=expert, weight=0.5)
 
         assert weight.expert == expert
@@ -474,14 +474,14 @@ class TestExpertWeight:
 
     def test_expert_weight_zero(self):
         """Test ExpertWeight with zero weight."""
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
         weight = ExpertWeight(expert=expert, weight=0.0)
 
         assert weight.weight == 0.0
 
     def test_expert_weight_negative_raises(self):
         """Test ExpertWeight with negative weight raises error."""
-        expert = Expert(model_name="gpt-4")
+        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
 
         with pytest.raises(ValueError, match="must be non-negative"):
             ExpertWeight(expert=expert, weight=-0.5)

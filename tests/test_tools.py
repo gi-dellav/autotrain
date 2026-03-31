@@ -7,9 +7,7 @@ from autotrain.tools import (
     create_tool,
     get_tool_schema,
     python,
-    terminal,
     web_search,
-    multiply_number,
     DEFAULT_TOOLS,
 )
 
@@ -62,7 +60,6 @@ class TestToolCallingConfig:
         """Test DEFAULT_TOOLS has built-in tools."""
         assert len(DEFAULT_TOOLS) > 0
         assert DEFAULT_TOOLS.has_tool("python")
-        assert DEFAULT_TOOLS.has_tool("terminal")
         assert DEFAULT_TOOLS.has_tool("web_search")
 
     def test_add_tool_from_callable(self):
@@ -103,7 +100,7 @@ class TestToolCallingConfig:
         """Test clearing all tools."""
         config = ToolCallingConfig()
         config.add_tool(python)
-        config.add_tool(terminal)
+        config.add_tool(web_search)
 
         assert len(config) == 2
         config.clear_tools()
@@ -113,11 +110,11 @@ class TestToolCallingConfig:
         """Test listing tools."""
         config = ToolCallingConfig()
         config.add_tool(python)
-        config.add_tool(terminal)
+        config.add_tool(web_search)
 
         tools = config.list_tools()
         assert "python" in tools
-        assert "terminal" in tools
+        assert "web_search" in tools
 
     def test_get_tool(self):
         """Test getting a tool."""
@@ -132,7 +129,7 @@ class TestToolCallingConfig:
         """Test getting OpenAI schemas."""
         config = ToolCallingConfig()
         config.add_tool(python)
-        config.add_tool(terminal)
+        config.add_tool(web_search)
 
         schemas = config.get_schemas()
 
@@ -148,14 +145,6 @@ class TestToolCallingConfig:
 
         result = config.execute_tool("python", {"code": "x = 15 * 23; x"})
         assert "345" in result
-
-    def test_execute_tool_with_args(self):
-        """Test executing a tool with named arguments."""
-        config = ToolCallingConfig()
-        config.add_tool(multiply_number)
-
-        result = config.execute_tool("multiply_number", {"a": 5, "b": 3})
-        assert result == 15.0
 
     def test_execute_nonexistent_tool(self):
         """Test executing a non-existent tool raises error."""
@@ -183,36 +172,11 @@ class TestBuiltinTools:
         result = python("1/0")
         assert "Error" in result
 
-    def test_terminal_safe_command(self):
-        """Test terminal with safe command."""
-        result = terminal("echo 'hello'")
-        assert "hello" in result
-
-    def test_terminal_blocked_command(self):
-        """Test terminal blocks dangerous commands."""
-        result = terminal("rm -rf /")
-        assert "blocked" in result.lower() or "Error" in result
-
-    def test_multiply_number(self):
-        """Test multiply_number tool."""
-        assert multiply_number(4, 5) == 20.0
-        assert multiply_number("3", "7") == 21.0
-
     def test_web_search(self):
         """Test web_search tool."""
         result = web_search("Python programming")
         # web_search may fail or return results depending on API availability
         assert isinstance(result, str)
-
-    def test_terminal_safe_command(self):
-        """Test terminal with safe command."""
-        result = terminal("echo 'hello'")
-        assert "hello" in result
-
-    def test_terminal_blocked_command(self):
-        """Test terminal blocks dangerous commands."""
-        result = terminal("rm -rf /")
-        assert "blocked" in result.lower() or "Error" in result
 
 
 class TestCreateTool:
@@ -312,16 +276,12 @@ class TestToolIntegration:
         """Test using multiple tools."""
         config = ToolCallingConfig()
         config.add_tool(python)
-        config.add_tool(multiply_number)
-        config.add_tool(terminal)
+        config.add_tool(web_search)
 
-        assert len(config) == 3
+        assert len(config) == 2
 
         py_result = config.execute_tool("python", {"code": "x = 10 + 5; x"})
         assert "15" in py_result
 
-        mul_result = config.execute_tool("multiply_number", {"a": 10, "b": 5})
-        assert mul_result == 50.0
-
-        term_result = config.execute_tool("terminal", {"command": "echo test"})
-        assert "test" in term_result
+        search_result = config.execute_tool("web_search", {"query": "test"})
+        assert isinstance(search_result, str)
