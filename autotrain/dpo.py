@@ -20,9 +20,18 @@ class DPOConfig:
         loss_type: Type of DPO loss ("sigmoid", "hinge", "ipo", "kto_pair")
         label_smoothing: Label smoothing factor (default 0.0)
         reference_free: If True, use model as its own reference
-        f_divergence_type: Type of f-divergence for alignment
-        reference_model_name: Optional reference model for DPO
-        reference_free: Use model as own reference
+        f_divergence_type: Type of f-divergence for alignment (default "reverse_kl")
+        reference_model_name: Optional reference model for DPO. If None, uses model itself.
+        truncation_mode: How to truncate sequences ("keep_start", "keep_end")
+        precompute_ref_log_probs: Precompute reference model log probs to save memory
+        epochs: Number of training epochs
+        batch_size: Per-device training batch size
+        gradient_accumulation_steps: Number of gradient accumulation steps
+        learning_rate: Training learning rate
+        max_length: Maximum total sequence length (prompt + completion)
+        max_prompt_length: Maximum prompt length
+        generate_during_eval: If True, generate completions during evaluation
+        is_encoder_decoder: Whether training an encoder-decoder model
     """
 
     beta: float = 0.1
@@ -30,7 +39,9 @@ class DPOConfig:
     label_smoothing: float = 0.0
     reference_free: bool = False
     f_divergence_type: str = "reverse_kl"
-    reference_model_name: Optional[str] = "unsloth/Qwen3.5-27B-GGUF"
+    reference_model_name: Optional[str] = None
+    truncation_mode: str = "keep_start"
+    precompute_ref_log_probs: bool = False
 
     # Training parameters
     epochs: int = 1
@@ -316,6 +327,10 @@ class DPOTrainer:
         try:
             from transformers import TrainingArguments
             from trl import DPOTrainer as TRLDPOTrainer
+            try:
+                from trl import DPOConfig as TRLDPOConfig
+            except ImportError:
+                TRLDPOConfig = None
         except ImportError as e:
             raise ImportError(
                 f"Required package not found: {e}. Install with: pip install trl torch"
@@ -341,32 +356,64 @@ class DPOTrainer:
             ref_model = ref_model.model
 
         # Training arguments
-        training_args = TrainingArguments(  # type: ignore[call-arg]
-            output_dir=output_dir or "./dpo_output",
-            num_train_epochs=self.dpo_config.epochs,
-            per_device_train_batch_size=self.dpo_config.batch_size,
-            gradient_accumulation_steps=self.dpo_config.gradient_accumulation_steps,
-            learning_rate=self.dpo_config.learning_rate,
-            max_length=self.dpo_config.max_length,
-            max_prompt_length=self.dpo_config.max_prompt_length,
-            logging_steps=10,
-            save_steps=100,
-            eval_steps=100 if eval_samples else None,
-            seed=42,
-        )
+        if TRLDPOConfig:
+            # Modern trl way: use DPOConfig
+            training_args = TRLDPOConfig(
+                output_dir=output_dir or "./dpo_output",
+                num_train_epochs=self.dpo_config.epochs,
+                per_device_train_batch_size=self.dpo_config.batch_size,
+                gradient_accumulation_steps=self.dpo_config.gradient_accumulation_steps,
+                learning_rate=self.dpo_config.learning_rate,
+                max_length=self.dpo_config.max_length,
+                max_prompt_length=self.dpo_config.max_prompt_length,
+                beta=self.dpo_config.beta,
+                loss_type=self.dpo_config.loss_type,
+                label_smoothing=self.dpo_config.label_smoothing,
+                f_divergence_type=self.dpo_config.f_divergence_type,
+                truncation_mode=self.dpo_config.truncation_mode,
+                precompute_ref_log_probs=self.dpo_config.precompute_ref_log_probs,
+                logging_steps=10,
+                save_steps=100,
+                eval_steps=100 if eval_samples else None,
+                seed=42,
+                remove_unused_columns=False,
+            )
+        else:
+            # Legacy way: use TrainingArguments
+            training_args = TrainingArguments(  # type: ignore[call-arg]
+                output_dir=output_dir or "./dpo_output",
+                num_train_epochs=self.dpo_config.epochs,
+                per_device_train_batch_size=self.dpo_config.batch_size,
+                gradient_accumulation_steps=self.dpo_config.gradient_accumulation_steps,
+                learning_rate=self.dpo_config.learning_rate,
+                logging_steps=10,
+                save_steps=100,
+                eval_steps=100 if eval_samples else None,
+                seed=42,
+                remove_unused_columns=False,
+            )
 
         # Create DPO trainer
-        trainer = TRLDPOTrainer(
-            model=self.model._fast_model,  # type: ignore[arg-type]
-            ref_model=ref_model,
-            args=training_args,  # type: ignore[arg-type]
-            beta=self.dpo_config.beta,  # type: ignore[arg-type]
-            train_dataset=dataset,
-            eval_dataset=self._prepare_dataset(eval_samples) if eval_samples else None,
-            tokenizer=self.model._tokenizer,  # type: ignore[arg-type]
-            max_length=self.dpo_config.max_length,  # type: ignore[arg-type]
-            max_prompt_length=self.dpo_config.max_prompt_length,  # type: ignore[arg-type]
-        )  # type: ignore[call-arg]
+        trainer_kwargs = {
+            "model": self.model._fast_model,
+            "ref_model": ref_model,
+            "args": training_args,
+            "train_dataset": dataset,
+            "eval_dataset": self._prepare_dataset(eval_samples) if eval_samples else None,
+            "tokenizer": self.model._tokenizer,
+            "max_length": self.dpo_config.max_length,
+            "max_prompt_length": self.dpo_config.max_prompt_length,
+        }
+
+        # If using legacy TrainingArguments, pass DPO parameters directly
+        if not TRLDPOConfig:
+            trainer_kwargs.update({
+                "beta": self.dpo_config.beta,
+                "loss_type": self.dpo_config.loss_type,
+                "label_smoothing": self.dpo_config.label_smoothing,
+            })
+
+        trainer = TRLDPOTrainer(**trainer_kwargs)  # type: ignore[arg-type]
 
         # Train
         print(f"Starting DPO training with {len(dataset)} samples...")
@@ -403,18 +450,23 @@ class DPOTrainer:
         # Apply template if available
         if hasattr(self.model, "_template") and self.model._template:
             data = []
+            template = self.model._template
             for sample in samples:
-                prompt_text = self.model._template.format_prompt(
+                # Format the prompt using the template
+                prompt_text = template.format_prompt(
                     instruction=sample.prompt,
                 )
-                chosen_text = self.model._template.format_training_sample(
-                    instruction=sample.prompt,
-                    output=sample.chosen,
+
+                # Format the completions separately
+                # We add the template's separator to match how format_training_sample would work
+                # This ensures the completion is correctly aligned with the prompt
+                chosen_text = (
+                    template.separator + template.assistant_template.format(output=sample.chosen)
                 )
-                rejected_text = self.model._template.format_training_sample(
-                    instruction=sample.prompt,
-                    output=sample.rejected,
+                rejected_text = (
+                    template.separator + template.assistant_template.format(output=sample.rejected)
                 )
+
                 data.append(
                     {
                         "prompt": prompt_text,

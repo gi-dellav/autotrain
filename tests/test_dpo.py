@@ -34,6 +34,8 @@ class TestDPOConfig:
         assert config.loss_type == "sigmoid"
         assert config.label_smoothing == 0.0
         assert config.reference_free is False
+        assert config.reference_model_name is None
+        assert config.truncation_mode == "keep_start"
         assert config.epochs == 1
         assert config.batch_size == 2
 
@@ -44,6 +46,8 @@ class TestDPOConfig:
             loss_type="hinge",
             label_smoothing=0.1,
             reference_free=True,
+            f_divergence_type="jsd",
+            truncation_mode="keep_end",
             epochs=3,
             batch_size=4,
             learning_rate=1e-6,
@@ -53,6 +57,8 @@ class TestDPOConfig:
         assert config.loss_type == "hinge"
         assert config.label_smoothing == 0.1
         assert config.reference_free is True
+        assert config.f_divergence_type == "jsd"
+        assert config.truncation_mode == "keep_end"
         assert config.epochs == 3
         assert config.batch_size == 4
         assert config.learning_rate == 1e-6
@@ -343,6 +349,41 @@ class TestDPOTrainer:
 
         with pytest.raises(ValueError, match="No preference samples"):
             trainer.train(output_dir=str(temp_dir))
+
+    def test_prepare_dataset_with_template(self):
+        """Test dataset preparation with an instruction template."""
+        from autotrain.templates.core import InstructionTemplate
+
+        model = Model()
+        # Mock a template
+        template = InstructionTemplate(
+            name="test_template",
+            user_template="Prompt: {instruction}\nResponse:",
+            assistant_template=" {output}",
+            separator="\n",
+        )
+        model._template = template
+
+        trainer = DPOTrainer(model)
+        trainer.add_preference_sample(
+            prompt="Hello",
+            chosen="Hi",
+            rejected="Bye",
+        )
+
+        dataset = trainer._prepare_dataset()
+
+        assert len(dataset) == 1
+        sample = dataset[0]
+
+        # Expected prompt: format_prompt("Hello")
+        # format_prompt for this template gives: "Prompt: Hello\nResponse:"
+        assert sample["prompt"] == "Prompt: Hello\nResponse:"
+
+        # Expected chosen: separator + assistant_template.format("Hi")
+        # "\n" + " Hi" = "\n Hi"
+        assert sample["chosen"] == "\n Hi"
+        assert sample["rejected"] == "\n Bye"
 
 
 class TestTrainDPO:
