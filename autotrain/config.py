@@ -220,7 +220,7 @@ class DatasetType:
 
     INSTRUCTION = "instruction"
     CPT = "cpt"
-    DPO = "dpo"
+    # DISABLED: DPO = "dpo"
     GRPO = "grpo"
 
 

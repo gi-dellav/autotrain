@@ -4,6 +4,15 @@ This example demonstrates how to use DPO to align models with human preferences
 using chosen/rejected response pairs.
 
 Run with: python examples/dpo_training.py
+
+# DISABLED: All DPO-related example code in this file has been disabled via comments.
+"""
+
+# ============================================================================
+# DISABLED: DPO Training Example
+# All DPO-related code in this file is disabled.
+# ============================================================================
+
 """
 
 from autotrain import Model
@@ -56,3 +65,8 @@ print(f"DPO training complete: {result}")
 
 # Export the DPO dataset for inspection
 trainer.export_dataset("./dpo_dataset.json")
+"""
+
+# ============================================================================
+# END DISABLED: DPO Training Example
+# ============================================================================

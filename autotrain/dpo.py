@@ -1,5 +1,14 @@
-"""DPO (Direct Preference Optimization) support for AutoTrain."""
+"""DPO (Direct Preference Optimization) support for AutoTrain.
 
+# DISABLED: All DPO-related code in this module has been disabled via comments.
+"""
+
+# ============================================================================
+# DISABLED: DPO Module
+# All DPO-related classes, methods, and functions in this file are disabled.
+# ============================================================================
+
+"""
 import json
 import logging
 from dataclasses import dataclass, field
@@ -589,3 +598,8 @@ def train_dpo(
         )
 
     return trainer.train(output_dir=output_dir)
+"""
+
+# ============================================================================
+# END DISABLED: DPO Module
+# ============================================================================

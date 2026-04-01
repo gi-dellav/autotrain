@@ -63,7 +63,7 @@ def pytest_configure(config):
     mock_sft_trainer_class.return_value = mock_sft_trainer_instance
 
     mock_trl_module = ModuleType("trl")
-    mock_trl_module.DPOTrainer = mock_dpo_trainer_class
+    # DISABLED: mock_trl_module.DPOTrainer = mock_dpo_trainer_class
     mock_trl_module.SFTTrainer = mock_sft_trainer_class
     mock_trl_module.__spec__ = MagicMock()
 
@@ -105,14 +105,15 @@ def mock_trainer():
         yield mock_sft_trainer
 
 
-@pytest.fixture
-def mock_dpo_trainer():
-    """Mock TRL DPOTrainer."""
-    with patch("trl.DPOTrainer") as mock_dpo_trainer:
-        mock_trainer_instance = MagicMock()
-        mock_trainer_instance.train = MagicMock()
-        mock_dpo_trainer.return_value = mock_trainer_instance
-        yield mock_dpo_trainer
+# DISABLED: DPO-related fixture
+# @pytest.fixture
+# def mock_dpo_trainer():
+#     """Mock TRL DPOTrainer."""
+#     with patch("trl.DPOTrainer") as mock_dpo_trainer:
+#         mock_trainer_instance = MagicMock()
+#         mock_trainer_instance.train = MagicMock()
+#         mock_dpo_trainer.return_value = mock_trainer_instance
+#         yield mock_dpo_trainer
 
 
 @pytest.fixture
