@@ -1,6 +1,7 @@
 """DPO (Direct Preference Optimization) support for AutoTrain."""
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -9,6 +10,8 @@ from .config import InferenceConfig
 from .core.model import Model
 from .expert import Expert
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class DPOConfig:
@@ -16,20 +19,20 @@ class DPOConfig:
     Configuration for DPO training.
 
     Args:
-        beta: Temperature parameter for DPO loss (default 0.1)
+        beta: Temperature parameter for DPO loss (default 0.1). Must be > 0.
         loss_type: Type of DPO loss ("sigmoid", "hinge", "ipo", "kto_pair")
-        label_smoothing: Label smoothing factor (default 0.0)
+        label_smoothing: Label smoothing factor (default 0.0). Must be in [0, 1).
         reference_free: If True, use model as its own reference
         f_divergence_type: Type of f-divergence for alignment (default "reverse_kl")
         reference_model_name: Optional reference model for DPO. If None, uses model itself.
         truncation_mode: How to truncate sequences ("keep_start", "keep_end")
         precompute_ref_log_probs: Precompute reference model log probs to save memory
-        epochs: Number of training epochs
-        batch_size: Per-device training batch size
-        gradient_accumulation_steps: Number of gradient accumulation steps
-        learning_rate: Training learning rate
-        max_length: Maximum total sequence length (prompt + completion)
-        max_prompt_length: Maximum prompt length
+        epochs: Number of training epochs. Must be > 0.
+        batch_size: Per-device training batch size. Must be > 0.
+        gradient_accumulation_steps: Number of gradient accumulation steps. Must be > 0.
+        learning_rate: Training learning rate. Must be > 0.
+        max_length: Maximum total sequence length (prompt + completion). Must be > 0.
+        max_prompt_length: Maximum prompt length. Must be > 0 and <= max_length.
         generate_during_eval: If True, generate completions during evaluation
         is_encoder_decoder: Whether training an encoder-decoder model
     """
@@ -52,6 +55,39 @@ class DPOConfig:
     max_prompt_length: int = 512
     generate_during_eval: bool = False
     is_encoder_decoder: bool = False
+
+    def __post_init__(self):
+        """Validate configuration values."""
+        if self.beta <= 0:
+            raise ValueError(f"beta must be > 0, got {self.beta}")
+        if self.label_smoothing < 0 or self.label_smoothing >= 1:
+            raise ValueError(f"label_smoothing must be in [0, 1), got {self.label_smoothing}")
+        if self.epochs <= 0:
+            raise ValueError(f"epochs must be > 0, got {self.epochs}")
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be > 0, got {self.batch_size}")
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError(
+                f"gradient_accumulation_steps must be > 0, got {self.gradient_accumulation_steps}"
+            )
+        if self.learning_rate <= 0:
+            raise ValueError(f"learning_rate must be > 0, got {self.learning_rate}")
+        if self.max_length <= 0:
+            raise ValueError(f"max_length must be > 0, got {self.max_length}")
+        if self.max_prompt_length <= 0:
+            raise ValueError(f"max_prompt_length must be > 0, got {self.max_prompt_length}")
+        if self.max_prompt_length > self.max_length:
+            raise ValueError(
+                f"max_prompt_length ({self.max_prompt_length}) must be <= max_length ({self.max_length})"
+            )
+        valid_loss_types = {"sigmoid", "hinge", "ipo", "kto_pair"}
+        if self.loss_type not in valid_loss_types:
+            raise ValueError(f"loss_type must be one of {valid_loss_types}, got '{self.loss_type}'")
+        valid_truncation_modes = {"keep_start", "keep_end"}
+        if self.truncation_mode not in valid_truncation_modes:
+            raise ValueError(
+                f"truncation_mode must be one of {valid_truncation_modes}, got '{self.truncation_mode}'"
+            )
 
 
 @dataclass
@@ -133,6 +169,7 @@ class DPOTrainer:
         # Training state
         self._is_trained = False
         self._training_history: List[Dict[str, float]] = []
+        self._output_dir: Optional[str] = None
 
         # Reference model (if using separate reference)
         self._reference_model = None
@@ -189,40 +226,41 @@ class DPOTrainer:
         Generate preference samples using an expert.
 
         The expert generates multiple responses per prompt, which are then
-        ranked to create chosen/rejected pairs.
+        ranked to create chosen/rejected pairs using pairwise comparisons.
 
         Args:
             expert: Expert model for generating responses
             prompts: List of prompts
-            count_per_prompt: Number of responses to generate per prompt
+            count_per_prompt: Number of responses to generate per prompt (default: 2)
         """
         for prompt in prompts:
-            # Generate multiple responses
             responses = []
             for _ in range(count_per_prompt):
                 response = expert.solve(prompt)
                 responses.append(response)
 
-            # Use expert to rank responses
-            if len(responses) >= 2:
-                # Simple approach: use first as chosen, second as rejected
-                # In practice, you might want to use expert.compare() or expert.rate()
-                comparison = expert.compare(prompt, responses[0], responses[1])
+            if len(responses) < 2:
+                continue
 
-                if comparison["winner"] == "a":
-                    chosen, rejected = responses[0], responses[1]
-                elif comparison["winner"] == "b":
-                    chosen, rejected = responses[1], responses[0]
-                else:
-                    # Tie - use first as chosen
-                    chosen, rejected = responses[0], responses[1]
+            # Generate all pairwise comparisons to create multiple preference pairs
+            for i in range(len(responses)):
+                for j in range(i + 1, len(responses)):
+                    comparison = expert.compare(prompt, responses[i], responses[j])
 
-                self.add_preference_sample(
-                    prompt=prompt,
-                    chosen=chosen,
-                    rejected=rejected,
-                    metadata={"generated": True},
-                )
+                    if comparison.get("winner") == "a":
+                        chosen, rejected = responses[i], responses[j]
+                    elif comparison.get("winner") == "b":
+                        chosen, rejected = responses[j], responses[i]
+                    else:
+                        # Tie - skip this pair to avoid noisy data
+                        continue
+
+                    self.add_preference_sample(
+                        prompt=prompt,
+                        chosen=chosen,
+                        rejected=rejected,
+                        metadata={"generated": True, "pair": (i, j)},
+                    )
 
     def create_from_rankings(
         self,
@@ -241,13 +279,11 @@ class DPOTrainer:
         if len(responses) != len(rankings):
             raise ValueError("responses and rankings must have same length")
 
-        # Sort by ranking
         sorted_pairs = sorted(zip(responses, rankings), key=lambda x: x[1])
 
-        # Create pairs: best vs each other
         best_response = sorted_pairs[0][0]
         for response, rank in sorted_pairs[1:]:
-            if rank > sorted_pairs[0][1]:  # Only if strictly worse
+            if rank > sorted_pairs[0][1]:
                 self.add_preference_sample(
                     prompt=prompt,
                     chosen=best_response,
@@ -276,7 +312,7 @@ class DPOTrainer:
             with open(path, "w") as f:
                 json.dump(data, f, indent=2)
 
-        print(f"DPO dataset exported to {path} ({len(data)} samples)")
+        logger.info("DPO dataset exported to %s (%d samples)", path, len(data))
 
     def import_dataset(self, path: Union[str, Path], format: str = "json") -> None:
         """
@@ -302,7 +338,7 @@ class DPOTrainer:
             sample = PreferenceSample.from_dict(item)
             self._preference_samples.append(sample)
 
-        print(f"Imported {len(data)} preference samples from {path}")
+        logger.info("Imported %d preference samples from %s", len(data), path)
 
     def train(
         self,
@@ -327,6 +363,7 @@ class DPOTrainer:
         try:
             from transformers import TrainingArguments
             from trl import DPOTrainer as TRLDPOTrainer
+
             try:
                 from trl import DPOConfig as TRLDPOConfig
             except ImportError:
@@ -346,18 +383,23 @@ class DPOTrainer:
         # Create reference model if needed
         ref_model = None
         if not self.dpo_config.reference_free and self.dpo_config.reference_model_name:
-            # Load reference model
-            from unsloth import FastLanguageModel
+            try:
+                from unsloth import FastLanguageModel
 
-            ref_model, _ = FastLanguageModel.from_pretrained(
-                model_name=self.dpo_config.reference_model_name,
-                load_in_4bit=True,
-            )
-            ref_model = ref_model.model
+                ref_model, _ = FastLanguageModel.from_pretrained(
+                    model_name=self.dpo_config.reference_model_name,
+                    load_in_4bit=True,
+                )
+                ref_model = ref_model.model
+            except ImportError:
+                logger.warning(
+                    "unsloth not available for reference model loading. "
+                    "Falling back to reference_free mode."
+                )
+                ref_model = None
 
         # Training arguments
         if TRLDPOConfig:
-            # Modern trl way: use DPOConfig
             training_args = TRLDPOConfig(
                 output_dir=output_dir or "./dpo_output",
                 num_train_epochs=self.dpo_config.epochs,
@@ -379,8 +421,7 @@ class DPOTrainer:
                 remove_unused_columns=False,
             )
         else:
-            # Legacy way: use TrainingArguments
-            training_args = TrainingArguments(  # type: ignore[call-arg]
+            training_args = TrainingArguments(
                 output_dir=output_dir or "./dpo_output",
                 num_train_epochs=self.dpo_config.epochs,
                 per_device_train_batch_size=self.dpo_config.batch_size,
@@ -395,29 +436,44 @@ class DPOTrainer:
 
         # Create DPO trainer
         trainer_kwargs = {
-            "model": self.model._fast_model,
+            "model": self.model.fast_model,
             "ref_model": ref_model,
             "args": training_args,
             "train_dataset": dataset,
             "eval_dataset": self._prepare_dataset(eval_samples) if eval_samples else None,
-            "tokenizer": self.model._tokenizer,
+            "tokenizer": self.model.tokenizer,
             "max_length": self.dpo_config.max_length,
             "max_prompt_length": self.dpo_config.max_prompt_length,
         }
 
-        # If using legacy TrainingArguments, pass DPO parameters directly
         if not TRLDPOConfig:
-            trainer_kwargs.update({
-                "beta": self.dpo_config.beta,
-                "loss_type": self.dpo_config.loss_type,
-                "label_smoothing": self.dpo_config.label_smoothing,
-            })
+            trainer_kwargs.update(
+                {
+                    "beta": self.dpo_config.beta,
+                    "loss_type": self.dpo_config.loss_type,
+                    "label_smoothing": self.dpo_config.label_smoothing,
+                }
+            )
 
-        trainer = TRLDPOTrainer(**trainer_kwargs)  # type: ignore[arg-type]
+        # Wire reference_free: if True and no separate ref_model, pass ref_model=None
+        if self.dpo_config.reference_free and ref_model is None:
+            trainer_kwargs["ref_model"] = None
+
+        trainer = TRLDPOTrainer(**trainer_kwargs)
 
         # Train
-        print(f"Starting DPO training with {len(dataset)} samples...")
+        logger.info("Starting DPO training with %d samples...", len(dataset))
         trainer.train()
+
+        # Save the trained adapter
+        final_output_dir = output_dir or "./dpo_output"
+        self._output_dir = final_output_dir
+
+        if hasattr(self.model.fast_model, "save_pretrained"):
+            adapter_path = Path(final_output_dir) / "adapter"
+            adapter_path.mkdir(parents=True, exist_ok=True)
+            self.model.fast_model.save_pretrained(str(adapter_path))
+            logger.info("DPO adapter saved to %s", adapter_path)
 
         self._is_trained = True
 
@@ -425,6 +481,7 @@ class DPOTrainer:
             "samples_used": len(dataset),
             "epochs": self.dpo_config.epochs,
             "trained": True,
+            "output_dir": final_output_dir,
         }
 
     def _prepare_dataset(
@@ -447,25 +504,15 @@ class DPOTrainer:
 
         samples = samples or self._preference_samples
 
-        # Apply template if available
-        if hasattr(self.model, "_template") and self.model._template:
-            data = []
-            template = self.model._template
-            for sample in samples:
-                # Format the prompt using the template
-                prompt_text = template.format_prompt(
-                    instruction=sample.prompt,
-                )
+        template = getattr(self.model, "_template", None)
 
-                # Format the completions separately
-                # We add the template's separator to match how format_training_sample would work
-                # This ensures the completion is correctly aligned with the prompt
-                chosen_text = (
-                    template.separator + template.assistant_template.format(output=sample.chosen)
-                )
-                rejected_text = (
-                    template.separator + template.assistant_template.format(output=sample.rejected)
-                )
+        if template is not None:
+            data = []
+            for sample in samples:
+                prompt_text = template.format_prompt(instruction=sample.prompt)
+
+                chosen_text = template.assistant_template.format(output=sample.chosen)
+                rejected_text = template.assistant_template.format(output=sample.rejected)
 
                 data.append(
                     {
@@ -499,7 +546,6 @@ class DPOTrainer:
         if not self._preference_samples:
             return {"total_samples": 0}
 
-        # Calculate prompt length statistics
         prompt_lengths = [len(s.prompt) for s in self._preference_samples]
         chosen_lengths = [len(s.chosen) for s in self._preference_samples]
         rejected_lengths = [len(s.rejected) for s in self._preference_samples]

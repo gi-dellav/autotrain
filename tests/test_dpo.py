@@ -20,6 +20,7 @@ def mock_dpo():
     """Mock DPO training components."""
     # trl is already mocked in conftest.py pytest_configure
     import sys
+
     yield sys.modules["trl"].DPOTrainer
 
 
@@ -62,6 +63,48 @@ class TestDPOConfig:
         assert config.epochs == 3
         assert config.batch_size == 4
         assert config.learning_rate == 1e-6
+
+    def test_invalid_beta(self):
+        """Test that negative beta raises error."""
+        with pytest.raises(ValueError, match="beta must be > 0"):
+            DPOConfig(beta=-0.1)
+
+    def test_invalid_label_smoothing(self):
+        """Test that out-of-range label_smoothing raises error."""
+        with pytest.raises(ValueError, match="label_smoothing must be in"):
+            DPOConfig(label_smoothing=-0.1)
+        with pytest.raises(ValueError, match="label_smoothing must be in"):
+            DPOConfig(label_smoothing=1.0)
+
+    def test_invalid_epochs(self):
+        """Test that zero epochs raises error."""
+        with pytest.raises(ValueError, match="epochs must be > 0"):
+            DPOConfig(epochs=0)
+
+    def test_invalid_batch_size(self):
+        """Test that zero batch_size raises error."""
+        with pytest.raises(ValueError, match="batch_size must be > 0"):
+            DPOConfig(batch_size=0)
+
+    def test_invalid_learning_rate(self):
+        """Test that negative learning_rate raises error."""
+        with pytest.raises(ValueError, match="learning_rate must be > 0"):
+            DPOConfig(learning_rate=-1e-7)
+
+    def test_prompt_length_exceeds_max_length(self):
+        """Test that max_prompt_length > max_length raises error."""
+        with pytest.raises(ValueError, match="max_prompt_length.*must be <= max_length"):
+            DPOConfig(max_length=256, max_prompt_length=512)
+
+    def test_invalid_loss_type(self):
+        """Test that invalid loss_type raises error."""
+        with pytest.raises(ValueError, match="loss_type must be one of"):
+            DPOConfig(loss_type="invalid")
+
+    def test_invalid_truncation_mode(self):
+        """Test that invalid truncation_mode raises error."""
+        with pytest.raises(ValueError, match="truncation_mode must be one of"):
+            DPOConfig(truncation_mode="invalid")
 
 
 class TestPreferenceSample:
@@ -355,11 +398,10 @@ class TestDPOTrainer:
         from autotrain.templates.core import InstructionTemplate
 
         model = Model()
-        # Mock a template
         template = InstructionTemplate(
             name="test_template",
             user_template="Prompt: {instruction}\nResponse:",
-            assistant_template=" {output}",
+            assistant_template="{output}",
             separator="\n",
         )
         model._template = template
@@ -376,14 +418,30 @@ class TestDPOTrainer:
         assert len(dataset) == 1
         sample = dataset[0]
 
-        # Expected prompt: format_prompt("Hello")
-        # format_prompt for this template gives: "Prompt: Hello\nResponse:"
         assert sample["prompt"] == "Prompt: Hello\nResponse:"
+        assert sample["chosen"] == "Hi"
+        assert sample["rejected"] == "Bye"
 
-        # Expected chosen: separator + assistant_template.format("Hi")
-        # "\n" + " Hi" = "\n Hi"
-        assert sample["chosen"] == "\n Hi"
-        assert sample["rejected"] == "\n Bye"
+    def test_prepare_dataset_without_template(self):
+        """Test dataset preparation without a template."""
+        model = Model()
+        model._template = None
+
+        trainer = DPOTrainer(model)
+        trainer.add_preference_sample(
+            prompt="Hello",
+            chosen="Hi",
+            rejected="Bye",
+        )
+
+        dataset = trainer._prepare_dataset()
+
+        assert len(dataset) == 1
+        sample = dataset[0]
+
+        assert sample["prompt"] == "Hello"
+        assert sample["chosen"] == "Hi"
+        assert sample["rejected"] == "Bye"
 
 
 class TestTrainDPO:

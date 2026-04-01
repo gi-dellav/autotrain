@@ -250,10 +250,6 @@ def apply_chat_template(
 
     result = template.separator.join(parts)
 
-    # Add BOS token if configured
-    if add_bos_token and template.system_template and "{bos_token}" in template.system_template:
-        result = template.system_template.split("{system}")[0].replace("{bos_token}", "") + result
-
     if tokenize:
         if tokenizer is None:
             raise ValueError("tokenizer must be provided when tokenize=True")
@@ -315,9 +311,8 @@ def standardize_sharegpt(
     try:
         from unsloth import standardize_sharegpt as unsloth_standardize_sharegpt
 
-        # Unsloth's version is highly optimized
         return unsloth_standardize_sharegpt(data)
-    except (ImportError, Exception):
+    except ImportError:
         pass
 
     standardized = []
@@ -457,7 +452,7 @@ def get_chat_template(
             map_eos_token=map_eos_token,
             map_bos_token=map_bos_token,
         )
-    except (ImportError, Exception):
+    except ImportError:
         pass
 
     # Fallback to local implementation
@@ -491,35 +486,32 @@ def get_chat_template(
 
 
 def _convert_to_jinja(template: InstructionTemplate) -> str:
-    """Convert AutoTrain template to Jinja chat template string."""
-    system = template.system_template.replace("{system}", "{{ messages[0]['content'] }}")
-    user = template.user_template.replace("{instruction}", "{{ message['content'] }}")
-    assistant = template.assistant_template.replace("{output}", "{{ message['content'] }}")
+    """Convert AutoTrain template to Jinja chat template string.
 
-    jinja = (
-        """{% for message in messages %}
-{% if message['role'] == 'system' %}
-"""
-        + system
-        + """
-{% elif message['role'] == 'user' %}
-"""
-        + user
-        + """
-{% elif message['role'] == 'assistant' %}
-"""
-        + assistant
-        + """
-{% endif %}
-{% endfor %}
-{% if add_generation_prompt %}
-"""
-        + user.split("{instruction}")[-1]
-        + """
-{% endif %}"""
-    )
+    Uses proper Jinja2 template construction instead of fragile string replacement.
+    """
+    system_part = template.system_template.replace("{system}", "{{ add_generation_prompt }}")
+    user_part = template.user_template.replace("{instruction}", "{{ message['content'] }}")
+    assistant_part = template.assistant_template.replace("{output}", "{{ message['content'] }}")
 
-    return jinja
+    jinja_lines = [
+        "{% for message in messages %}",
+        "{% if message['role'] == 'system' %}",
+        system_part,
+        "{% elif message['role'] == 'user' %}",
+        user_part,
+        "{% elif message['role'] == 'assistant' %}",
+        assistant_part,
+        "{% endif %}",
+        "{% endfor %}",
+        "{% if add_generation_prompt %}",
+        assistant_part.split("{{ message['content'] }}")[0]
+        if "{{ message['content'] }}" in assistant_part
+        else "",
+        "{% endif %}",
+    ]
+
+    return "\n".join(jinja_lines)
 
 
 __all__ = [
