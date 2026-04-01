@@ -216,7 +216,6 @@ class TestCheckpointManager:
         mock_model.prompts.producer = "producer"
         mock_model.prompts.solver = "solver"
         mock_model.prompts.splitter = "splitter"
-        mock_model.prompts.reviewer = "reviewer"
         mock_model.prompts.checker = "checker"
 
         info = manager.save(model=mock_model, iteration=1)

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from autotrain.checkpoints import CheckpointManager
-from autotrain.components import Checker, Producer, Reviewer, Solver, Splitter
+from autotrain.components import Checker, Producer, Solver, Splitter
 from autotrain.config import (
     InferenceConfig,
     PEFTConfig,
@@ -25,7 +25,7 @@ class VisionModel:
     Vision Model class wrapping an unsloth fine-tunable VLM.
 
     Implements self-tuning through iteration-by-iteration loop for VLMs:
-    Producer -> Solver -> Splitter -> Reviewer -> Fine-tune
+    Producer -> Solver -> Splitter -> Checker -> Fine-tune
 
     Example usage:
         model = VisionModel(model_name="unsloth/Qwen3.5-27B-GGUF")
@@ -89,7 +89,6 @@ class VisionModel:
         self._producer: Optional[Producer] = None
         self._solver: Optional[Solver] = None
         self._splitter: Optional[Splitter] = None
-        self._reviewer: Optional[Reviewer] = None
         self._checker: Optional[Checker] = None
 
         self._samples: list[VisionSample] = []

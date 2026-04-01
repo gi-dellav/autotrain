@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import random
+from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from autotrain.config import InferenceConfig
     from autotrain.core.model import Model
     from autotrain.data_types import Sample
+
+
+def _get_prompt(prompt: Union[str, list[str]]) -> str:
+    """Get a single prompt from str or list[str], selecting randomly if list."""
+    if isinstance(prompt, list):
+        return random.choice(prompt)
+    return prompt
 
 
 class Producer:
@@ -20,11 +28,11 @@ class Producer:
     def __init__(
         self,
         model: "Model",
-        prompt: str,
+        prompt: Union[str, list[str]],
         inference_config: "InferenceConfig",
     ):
         self.model = model
-        self.prompt = prompt  # Store for backward compatibility, but not used directly
+        self.prompt = prompt
         self.inference_config = inference_config
 
     def generate(

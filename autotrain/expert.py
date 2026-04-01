@@ -21,7 +21,7 @@ class ExpertPrompts:
     """Configurable prompts for Expert components.
 
     For produce and solve, use the baking functions by calling get_produce() or get_solve().
-    For select, review, and check, use the getter methods.
+    For select and check, use the getter methods.
 
     If custom prompts are set, they will be used directly. Otherwise, the default detailed
     prompts from the prompts module will be used.
@@ -41,7 +41,6 @@ class ExpertPrompts:
     produce: Optional[str] = None
     solve: Optional[str] = None
     select: Optional[str] = None
-    review: Optional[str] = None
     check: Optional[str] = None
 
     def get_produce(self, topic: str, format: str = "json") -> str:
@@ -81,16 +80,6 @@ class ExpertPrompts:
         from .prompts import SPLITTER_DEFAULT
 
         return self.select if self.select else SPLITTER_DEFAULT
-
-    def get_review(self) -> str:
-        """Get the review prompt using the default constant if no custom prompt is set.
-
-        Returns:
-            The review prompt string.
-        """
-        from .prompts import REVIEWER_DEFAULT
-
-        return self.review if self.review else REVIEWER_DEFAULT
 
     def get_check(self) -> str:
         """Get the check prompt using the default constant if no custom prompt is set.

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+import random
+from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
     from autotrain.config import InferenceConfig
@@ -21,7 +22,7 @@ class Splitter:
     def __init__(
         self,
         model: "Model",
-        prompt: str,
+        prompt: Union[str, list[str]],
         inference_config: "InferenceConfig",
         experts: Optional[list["Expert"]] = None,
     ):

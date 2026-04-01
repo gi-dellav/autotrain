@@ -25,7 +25,7 @@ class Solver:
     def __init__(
         self,
         model: "Model",
-        prompt: str,
+        prompt: Union[str, list[str]],
         inference_config: "InferenceConfig",
         experts: Optional[list[Union["Expert", ExpertWeight]]] = None,
     ):

@@ -2,7 +2,7 @@
 
 This example demonstrates using AutoTrain's self-tuning pipeline for a specific task
 (code review). The self-tuning loop iteratively improves the model using:
-Producer -> Solver -> Splitter -> Reviewer
+Producer -> Solver -> Splitter -> Checker
 
 Run with: python examples/self_tuning_task.py
 """

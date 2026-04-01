@@ -4,7 +4,7 @@ Python framework for LLM self-tuning and distillation based on Unsloth and LiteL
 
 ## Features
 
-- **Iterative Self-Tuning**: Producer → Solver → Splitter → Reviewer training pipeline
+- **Iterative Self-Tuning**: Producer → Solver → Splitter → Checker training pipeline
 - **Multiple Experts**: Weighted teacher models (GPT-4, Claude, etc.) for diverse knowledge
 - **Automatic Checkpointing**: Crash recovery with best-model retention
 - **Benchmark Evaluation**: Exact match & LLM-as-judge with early stopping

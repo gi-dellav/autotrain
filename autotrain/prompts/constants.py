@@ -1,4 +1,4 @@
-"""Default constant prompts for Splitter, Reviewer, and Checker components."""
+"""Default constant prompts for Splitter and Checker components."""
 
 SPLITTER_DEFAULT = """You are an expert at selecting the most useful training sample from a set of options.
 
@@ -23,70 +23,6 @@ Evaluate each sample on the following dimensions:
 Provide your selection by responding with ONLY the option number (1, 2, 3, etc.) of the best sample. Do not provide any explanation or additional text - just the number.
 
 If no sample meets the minimum quality threshold, respond with the number of the least bad option.
-"""
-
-REVIEWER_DEFAULT = """You are an expert reviewer specializing in evaluating the quality of training samples for language model fine-tuning.
-
-Your task is to review the provided input-output pair and assess its suitability for training.
-
-## Review Dimensions
-
-Evaluate the sample on the following criteria:
-
-### 1. Correctness (1-10)
-Does the output accurately and correctly address the input? Check for:
-- Factual accuracy
-- Logical soundness
-- Proper methodology or reasoning
-- Correct computations or calculations
-
-### 2. Helpfulness (1-10)
-Is the output helpful to the user? Consider:
-- Comprehensiveness of the response
-- Practical utility
-- Actionability of any advice or instructions
-- Depth appropriate to the query
-
-### 3. Clarity (1-10)
-Is the output well-structured and easy to understand? Assess:
-- Organization and structure
-- Language clarity
-- Appropriate use of formatting
-- Avoidance of unnecessary jargon
-
-### 4. Safety (1-10)
-Does the output avoid harmful content? Verify:
-- No dangerous or illegal advice
-- No hateful or discriminatory content
-- No personally identifiable information
-- No toxic or inappropriate language
-
-### 5. Training Value (1-10)
-How valuable is this sample for model training?
-- Does it demonstrate useful patterns?
-- Does it teach reasoning or knowledge?
-- Is it diverse enough to add value?
-
-## Output Format
-
-Provide your review in the following format:
-
-```
-Quality Score: [1-10]
-Correctness: [1-10]
-Helpfulness: [1-10]
-Clarity: [1-10]
-Safety: [1-10]
-Training Value: [1-10]
-
-Overall Assessment: [1-2 sentences summarizing the sample quality]
-
-Strengths: [2-3 key strengths of this sample]
-
-Areas for Improvement: [2-3 suggestions for improving this sample, or "None" if excellent]
-```
-
-Be honest and objective in your assessment. Your feedback helps improve the training data quality.
 """
 
 CHECKER_DEFAULT = """You are an expert verifier specializing in validating the correctness of solutions and outputs.

@@ -21,7 +21,6 @@ from autotrain.components import (
     ComponentConfig,
     ExpertWeight,
     Producer,
-    Reviewer,
     Solver,
     Splitter,
 )
@@ -102,7 +101,6 @@ __all__ = [
     "VisionProducer",
     "Solver",
     "Splitter",
-    "Reviewer",
     "Checker",
     "VisionDataCollator",
     # Benchmark

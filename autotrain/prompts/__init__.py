@@ -7,20 +7,18 @@ This module provides two types of prompts:
    - `bake_producer(topic, format)` - Generate training samples
    - `bake_solver(topic, context)` - Solve problems
 
-2. **Default Constants**: For components like Splitter, Reviewer, and Checker
+2. **Default Constants**: For components like Splitter and Checker
    that use fixed, detailed prompts.
    - `SPLITTER_DEFAULT` - Selecting best training samples
-   - `REVIEWER_DEFAULT` - Evaluating sample quality
    - `CHECKER_DEFAULT` - Verifying solution correctness
 """
 
-from .constants import CHECKER_DEFAULT, REVIEWER_DEFAULT, SPLITTER_DEFAULT
+from .constants import CHECKER_DEFAULT, SPLITTER_DEFAULT
 from .templates import bake_producer, bake_solver
 
 __all__ = [
     "bake_producer",
     "bake_solver",
     "SPLITTER_DEFAULT",
-    "REVIEWER_DEFAULT",
     "CHECKER_DEFAULT",
 ]

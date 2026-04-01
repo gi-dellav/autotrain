@@ -18,7 +18,7 @@ def _init_components(
     experts: Optional[list[tuple["Expert", float]]] = None,
 ):
     """Initialize pipeline components."""
-    from autotrain.components import Checker, Producer, Reviewer, Solver, Splitter
+    from autotrain.components import Checker, Producer, Solver, Splitter
 
     model._producer = Producer(
         model=model,
@@ -45,13 +45,6 @@ def _init_components(
     model._splitter = Splitter(
         model=model,
         prompt=model.prompts.splitter,
-        inference_config=model.inference_config,
-        experts=expert_list,
-    )
-
-    model._reviewer = Reviewer(
-        model=model,
-        prompt=model.prompts.reviewer,
         inference_config=model.inference_config,
         experts=expert_list,
     )
@@ -123,7 +116,7 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
             gradient_accumulation_steps=model._training_config.gradient_accumulation_steps,
             learning_rate=model._training_config.learning_rate,
             weight_decay=model._training_config.weight_decay,
-            warmup_steps=model._training_config.warmup_steps,
+            warmup_ratio=model._training_config.warmup_ratio,
             max_grad_norm=model._training_config.max_grad_norm,
             logging_steps=model._training_config.logging_steps,
             save_strategy=model._training_config.save_strategy,
@@ -137,6 +130,7 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
             dataloader_num_workers=model._scalable_config.num_workers,
             pin_memory=model._scalable_config.pin_memory,
             report_to="none",
+            lr_scheduler_type=model._training_config.scheduler_type,
         )
 
         # Create trainer
@@ -348,29 +342,10 @@ def train(
         selected_samples = model._splitter.select(output_samples, target_count=k)
         print(f"Selected {len(selected_samples)} samples")
 
-        # Reviewer: Review and refine samples
-        assert model._reviewer is not None, "Reviewer should be initialized"
-        reviewed_samples = model._reviewer.review(selected_samples)
-
-        # Calculate review statistics
-        if reviewed_samples:
-            review_scores = [
-                s.metadata.get("review", {}).get("score", 0)
-                for s in reviewed_samples
-                if "review" in s.metadata
-            ]
-            if review_scores:
-                avg_score = sum(review_scores) / len(review_scores)
-                print(f"Reviewed {len(reviewed_samples)} samples (avg score: {avg_score:.2f}/10)")
-            else:
-                print(f"Reviewed {len(reviewed_samples)} samples")
-        else:
-            print("Reviewed 0 samples")
-
         # Add to training data
-        model._samples.extend(reviewed_samples)
+        model._samples.extend(selected_samples)
         model._training_data.extend(
-            [{"input": s.input_data, "output": s.output_data} for s in reviewed_samples]
+            [{"input": s.input_data, "output": s.output_data} for s in selected_samples]
         )
 
         # Fine-tune the model (with optional step-level checkpoint resume)
@@ -638,7 +613,7 @@ def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False
             learning_rate=model._training_config.learning_rate,
             num_train_epochs=model._training_config.epochs,
             max_steps=model._training_config.max_steps,
-            warmup_steps=model._training_config.warmup_steps,
+            warmup_ratio=model._training_config.warmup_ratio,
             logging_steps=model._training_config.logging_steps,
             save_steps=model._training_config.save_steps,
             save_total_limit=model._training_config.save_total_limit,
@@ -647,6 +622,7 @@ def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False
             gradient_checkpointing=use_gc,
             report_to=[],
             seed=42,
+            lr_scheduler_type=model._training_config.scheduler_type,
         )
 
         from trl import SFTTrainer

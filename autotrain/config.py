@@ -1,7 +1,19 @@
 """Configuration classes for AutoTrain."""
 
+import random
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
+
+
+def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
+    """Get a single prompt from str or list[str], selecting randomly if list."""
+    if prompt is None:
+        return None
+    if isinstance(prompt, list):
+        if not prompt:
+            return None
+        return random.choice(prompt)
+    return prompt
 
 
 @dataclass
@@ -21,10 +33,13 @@ class Prompts:
     """Configurable prompts for each component.
 
     For Producer and Solver, use the baking functions by calling get_producer() or get_solver().
-    For Splitter, Reviewer, and Checker, use get_splitter(), get_reviewer(), or get_checker().
+    For Splitter and Checker, use get_splitter() or get_checker().
 
     If custom prompts are set, they will be used directly. Otherwise, the default detailed
     prompts from the prompts module will be used.
+
+    Each prompt can be either a single string or a list of strings. If a list is provided,
+    a random prompt will be selected each time get_* is called.
 
     Example:
         # Use default baked prompts
@@ -36,13 +51,18 @@ class Prompts:
             producer="Custom producer prompt",
             solver="Custom solver prompt",
         )
+
+        # Use multiple prompts (randomly selected)
+        multi_prompts = Prompts(
+            producer=["Generate a Python question", "Create a coding challenge"],
+            solver=["Solve this problem", "Answer the following"],
+        )
     """
 
-    producer: Optional[str] = None
-    solver: Optional[str] = None
-    splitter: Optional[str] = None
-    reviewer: Optional[str] = None
-    checker: Optional[str] = None
+    producer: Optional[Union[str, list[str]]] = None
+    solver: Optional[Union[str, list[str]]] = None
+    splitter: Optional[Union[str, list[str]]] = None
+    checker: Optional[Union[str, list[str]]] = None
 
     def get_producer(self, topic: str, format: str = "json") -> str:
         """Get the producer prompt, using bake_producer if no custom prompt is set.
@@ -56,7 +76,7 @@ class Prompts:
         """
         from .prompts import bake_producer
 
-        return self.producer if self.producer else bake_producer(topic, format)
+        return _get_prompt(self.producer) if self.producer else bake_producer(topic, format)
 
     def get_solver(self, topic: Optional[str] = None, context: str = "") -> str:
         """Get the solver prompt, using bake_solver if no custom prompt is set.
@@ -70,7 +90,7 @@ class Prompts:
         """
         from .prompts import bake_solver
 
-        return self.solver if self.solver else bake_solver(topic, context)
+        return _get_prompt(self.solver) if self.solver else bake_solver(topic, context)
 
     def get_splitter(self) -> str:
         """Get the splitter prompt using the default constant if no custom prompt is set.
@@ -80,17 +100,7 @@ class Prompts:
         """
         from .prompts import SPLITTER_DEFAULT
 
-        return self.splitter if self.splitter else SPLITTER_DEFAULT
-
-    def get_reviewer(self) -> str:
-        """Get the reviewer prompt using the default constant if no custom prompt is set.
-
-        Returns:
-            The reviewer prompt string.
-        """
-        from .prompts import REVIEWER_DEFAULT
-
-        return self.reviewer if self.reviewer else REVIEWER_DEFAULT
+        return _get_prompt(self.splitter) if self.splitter else SPLITTER_DEFAULT
 
     def get_checker(self) -> str:
         """Get the checker prompt using the default constant if no custom prompt is set.
@@ -100,7 +110,7 @@ class Prompts:
         """
         from .prompts import CHECKER_DEFAULT
 
-        return self.checker if self.checker else CHECKER_DEFAULT
+        return _get_prompt(self.checker) if self.checker else CHECKER_DEFAULT
 
 
 @dataclass
@@ -111,8 +121,8 @@ class PEFTConfig:
     See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
     """
 
-    r: int = 16
-    lora_alpha: int = 32
+    r: int = 64
+    lora_alpha: int = 128
     lora_dropout: float = 0.0
     bias: str = "none"
     use_gradient_checkpointing: str = "unsloth"
@@ -136,12 +146,13 @@ class TrainingConfig:
     See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
     """
 
-    epochs: int = 3
-    batch_size: int = 2
-    gradient_accumulation_steps: int = 8
-    learning_rate: float = 2e-4
+    epochs: int = 1
+    batch_size: int = 4
+    gradient_accumulation_steps: int = 16
+    learning_rate: float = 1e-5
     weight_decay: float = 0.01
-    warmup_steps: int = 10
+    warmup_ratio: float = 0.15
+    warmup_steps: int = 0
     max_grad_norm: float = 1.0
     logging_steps: int = 10
     save_strategy: str = "steps"
@@ -150,7 +161,7 @@ class TrainingConfig:
     eval_steps: int = 100
     save_total_limit: int = 3
     seed: int = 3407
-    scheduler_type: str = "linear"
+    scheduler_type: str = "cosine"
 
 
 @dataclass

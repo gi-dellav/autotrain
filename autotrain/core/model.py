@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 from autotrain.checkpoints import CheckpointManager
-from autotrain.components import Checker, Producer, Reviewer, Solver, Splitter
+from autotrain.components import Checker, Producer, Solver, Splitter
 from autotrain.config import (
     InferenceConfig,
     PEFTConfig,
@@ -26,7 +26,7 @@ class Model:
     Model class wrapping an unsloth fine-tunable model.
 
     Implements self-tuning through iteration-by-iteration loop:
-    Producer -> Solver -> Splitter -> Reviewer -> Fine-tune
+    Producer -> Solver -> Splitter -> Checker -> Fine-tune
     """
 
     def __init__(
@@ -93,7 +93,6 @@ class Model:
         self._producer: Optional[Producer] = None
         self._solver: Optional[Solver] = None
         self._splitter: Optional[Splitter] = None
-        self._reviewer: Optional[Reviewer] = None
         self._checker: Optional[Checker] = None
 
         # Dataset storage
@@ -329,13 +328,12 @@ class Model:
         self,
         expert: "Expert",
         production_weight: float = 1.0,
-        review_weight: float = 0.0,
         check_weight: float = 0.0,
     ) -> None:
         """Add an expert with weighted production rates."""
         from autotrain.core.management import add_expert
 
-        add_expert(self, expert, production_weight, review_weight, check_weight)
+        add_expert(self, expert, production_weight, check_weight)
 
     def remove_expert(self, expert: "Expert") -> None:
         """Remove an expert from all components."""
@@ -358,13 +356,12 @@ class Model:
     def add_experts(
         self,
         experts: list[tuple["Expert", float]],
-        review_weight: float = 0.0,
         check_weight: float = 0.0,
     ) -> None:
         """Add multiple experts with production weights."""
         from autotrain.core.management import add_experts
 
-        add_experts(self, experts, review_weight, check_weight)
+        add_experts(self, experts, check_weight)
 
     def set_benchmark(self, benchmark: "Benchmark") -> None:
         """Set the benchmark for evaluation."""
@@ -434,7 +431,7 @@ class Model:
         self,
         experts: Optional[list[tuple["Expert", float]]] = None,
     ) -> None:
-        """Initialize pipeline components (producer, solver, splitter, reviewer, checker)."""
+        """Initialize pipeline components (producer, solver, splitter, checker)."""
         from autotrain.core.training import _init_components
 
         _init_components(self, experts)

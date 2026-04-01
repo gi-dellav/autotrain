@@ -1,4 +1,4 @@
-"""Tests for pipeline components: Producer, Solver, Splitter, Reviewer, Checker."""
+"""Tests for pipeline components: Producer, Solver, Splitter, Checker."""
 
 from unittest.mock import MagicMock
 
@@ -9,7 +9,6 @@ from autotrain.components import (
     Checker,
     ExpertWeight,
     Producer,
-    Reviewer,
     Solver,
     Splitter,
 )
@@ -312,79 +311,6 @@ class TestSplitter:
 
         assert best == samples[0]
         assert best.metadata["selected_by"] == "default"
-
-
-class TestReviewer:
-    """Tests for Reviewer component."""
-
-    def test_reviewer_init(self):
-        """Test Reviewer initialization."""
-        mock_model = MagicMock()
-        config = InferenceConfig()
-
-        reviewer = Reviewer(
-            model=mock_model,
-            prompt="Review samples",
-            inference_config=config,
-        )
-
-        assert reviewer.model == mock_model
-        assert reviewer.experts == []
-
-    def test_reviewer_add_expert(self):
-        """Test adding expert to Reviewer."""
-        mock_model = MagicMock()
-        config = InferenceConfig()
-        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF")
-
-        reviewer = Reviewer(
-            model=mock_model,
-            prompt="Review samples",
-            inference_config=config,
-        )
-
-        reviewer.add_expert(expert)
-
-        assert len(reviewer.experts) == 1
-
-    def test_reviewer_review_no_expert(self):
-        """Test Reviewer.review without expert."""
-        mock_model = MagicMock()
-        config = InferenceConfig()
-
-        reviewer = Reviewer(
-            model=mock_model,
-            prompt="Review samples",
-            inference_config=config,
-        )
-
-        sample = Sample(input_data="input", output_data="output")
-        reviewed = reviewer.review([sample])
-
-        assert len(reviewed) == 1
-        assert reviewed[0].metadata["review"]["reviewer"] == "none"
-        assert reviewed[0].metadata["review"]["score"] == 5
-
-    def test_reviewer_review_with_expert(self, mock_litellm):
-        """Test Reviewer.review with expert."""
-        mock_model = MagicMock()
-        config = InferenceConfig()
-        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", api_key="test-key")
-
-        reviewer = Reviewer(
-            model=mock_model,
-            prompt="Review samples",
-            inference_config=config,
-            experts=[expert],
-        )
-
-        sample = Sample(input_data="input", output_data="output")
-        reviewed = reviewer.review([sample])
-
-        assert len(reviewed) == 1
-        assert "review" in reviewed[0].metadata
-        # Expert should be called
-        assert mock_litellm.called
 
 
 class TestChecker:

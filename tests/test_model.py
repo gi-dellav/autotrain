@@ -52,7 +52,6 @@ class TestPrompts:
         assert prompts.producer is None
         assert prompts.solver is None
         assert prompts.splitter is None
-        assert prompts.reviewer is None
         assert prompts.checker is None
 
         # Check getter methods return detailed prompts
@@ -65,9 +64,6 @@ class TestPrompts:
 
         splitter_prompt = prompts.get_splitter()
         assert "You are an expert at selecting" in splitter_prompt
-
-        reviewer_prompt = prompts.get_reviewer()
-        assert "You are an expert reviewer" in reviewer_prompt
 
         checker_prompt = prompts.get_checker()
         assert "You are an expert verifier" in checker_prompt
@@ -82,7 +78,6 @@ class TestPrompts:
         assert prompts.producer == "Custom producer prompt"
         assert prompts.solver == "Custom solver prompt"
         assert prompts.splitter is None
-        assert prompts.reviewer is None
         assert prompts.checker is None
 
         # Custom prompts should be returned by getters
@@ -503,7 +498,6 @@ class TestModel:
         assert model._producer is not None
         assert model._solver is not None
         assert model._splitter is not None
-        assert model._reviewer is not None
 
     def test_enable_checker(self):
         """Test model with checker enabled."""
@@ -537,6 +531,7 @@ class TestModelToolMethods:
     def test_add_tool_from_builtin(self):
         """Test adding built-in tool to Model."""
         from autotrain.tools import python, web_search
+
         model = Model()
         model.add_tool(python)
         model.add_tool(web_search)
@@ -560,6 +555,7 @@ class TestModelToolMethods:
     def test_clear_tools(self):
         """Test clearing all tools from Model."""
         from autotrain.tools import python, web_search
+
         model = Model()
         model.add_tool(python)
         model.add_tool(web_search)

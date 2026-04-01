@@ -21,7 +21,6 @@ def add_expert(
     model: "Model",
     expert: "Expert",
     production_weight: float = 1.0,
-    review_weight: float = 0.0,
     check_weight: float = 0.0,
 ) -> None:
     """Add an expert with weighted production rates."""
@@ -30,9 +29,6 @@ def add_expert(
 
     if model._splitter:
         model._splitter.add_expert(expert)
-
-    if model._reviewer and review_weight > 0:
-        model._reviewer.add_expert(expert)
 
     if model._checker and check_weight > 0:
         model._checker.add_expert(expert)
@@ -44,8 +40,6 @@ def remove_expert(model: "Model", expert: "Expert") -> None:
         model._solver.remove_expert(expert)
     if model._splitter:
         model._splitter.remove_expert(expert)
-    if model._reviewer:
-        model._reviewer.remove_expert(expert)
     if model._checker:
         model._checker.remove_expert(expert)
 
@@ -56,8 +50,6 @@ def clear_experts(model: "Model") -> None:
         model._solver.clear_experts()
     if model._splitter:
         model._splitter.experts.clear()
-    if model._reviewer:
-        model._reviewer.experts.clear()
     if model._checker:
         model._checker.experts.clear()
 
@@ -73,7 +65,6 @@ def set_expert_weights(model: "Model", weights: dict["Expert", float]) -> None:
 def add_experts(
     model: "Model",
     experts: list[tuple["Expert", float]],
-    review_weight: float = 0.0,
     check_weight: float = 0.0,
 ) -> None:
     """Add multiple experts with production weights."""
@@ -82,7 +73,6 @@ def add_experts(
             model=model,
             expert=expert,
             production_weight=production_weight,
-            review_weight=review_weight,
             check_weight=check_weight,
         )
     print(f"Added {len(experts)} experts with production weights")
