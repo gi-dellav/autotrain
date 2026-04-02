@@ -55,6 +55,7 @@ def _init_components(
             prompt=model.prompts.checker,
             inference_config=model.inference_config,
             experts=expert_list,
+            rewrite_mode=model.checker_rewrite_mode,
         )
 
 
@@ -72,10 +73,20 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
         # Prepare dataset
         train_dataset = Dataset.from_list(model._training_data)
 
-        from autotrain.templates import format_sample
+        from autotrain.templates import apply_chat_template, format_sample
 
         # Format dataset for instruction tuning
         def format_example(example):
+            # Check if it's already in conversation format
+            if "messages" in example:
+                return {
+                    "text": apply_chat_template(
+                        messages=example["messages"],
+                        template=model._template,
+                    )
+                }
+            
+            # Fallback to standard input/output
             return {
                 "text": format_sample(
                     instruction=example.get("input", ""),
@@ -326,6 +337,17 @@ def train(
         output_samples = model._solver.solve(input_samples)
         print(f"Solved {len(output_samples)} samples")
 
+        # Collect Producer and Solver expert data if enabled
+        if model.collect_expert_data:
+            for s in output_samples:
+                # If produced by expert, collect it
+                if "expert" in s.metadata.get("producer", ""):
+                    model.expert_training_data.append({
+                        "type": "production",
+                        "messages": s.to_conversation(),
+                        "metadata": s.metadata
+                    })
+
         # Checker: Optional verification
         if model.enable_checker and model._checker:
             verified_samples = model._checker.verify(output_samples)
@@ -337,15 +359,70 @@ def train(
             )
             output_samples = verified_samples
 
+        # Collect Checker expert data if enabled
+        if model.collect_expert_data and model.enable_checker:
+            for s in output_samples:
+                if "check" in s.metadata:
+                    check_res = s.metadata["check"]
+                    # Store checker explanation as part of the output (Chain of Thought)
+                    model.expert_training_data.append({
+                        "type": "verification",
+                        "input": s.input_data,
+                        "output": s.output_data,
+                        "explanation": check_res.get("explanation", ""),
+                        "is_correct": check_res.get("is_correct"),
+                        "messages": [
+                            {"role": "user", "content": f"Problem: {s.input_data}\n\nSolution: {s.output_data}\n\nIs this correct?"},
+                            {"role": "assistant", "content": check_res.get("explanation", "")}
+                        ]
+                    })
+                    if s.metadata.get("rewritten"):
+                         model.expert_training_data.append({
+                            "type": "rewrite",
+                            "input": s.input_data,
+                            "original_output": s.metadata.get("original_output"),
+                            "corrected_output": s.output_data,
+                            "messages": [
+                                {"role": "user", "content": f"Problem: {s.input_data}\n\nIncorrect Solution: {s.metadata.get('original_output')}\n\nCorrect the solution."},
+                                {"role": "assistant", "content": s.output_data}
+                            ]
+                        })
+
         # Splitter: Select useful samples based on sample_multiplier
         assert model._splitter is not None, "Splitter should be initialized"
         selected_samples = model._splitter.select(output_samples, target_count=k)
         print(f"Selected {len(selected_samples)} samples")
 
+        # Collect Splitter expert data (DPO style) if enabled
+        if model.collect_expert_data:
+            for s in selected_samples:
+                if "comparison_result" in s.metadata:
+                    comp = s.metadata["comparison_result"]
+                    # Usually Splitter compares two samples
+                    # We can store this as a preference pair
+                    model.expert_training_data.append({
+                        "type": "selection",
+                        "prompt": s.input_data,
+                        "chosen": s.output_data,
+                        "metadata": comp,
+                        # Formatting for DPO
+                        "dpo_messages": [
+                             {"role": "user", "content": s.input_data},
+                             {"role": "assistant", "content": s.output_data}
+                        ]
+                    })
+
         # Add to training data
         model._samples.extend(selected_samples)
         model._training_data.extend(
-            [{"input": s.input_data, "output": s.output_data} for s in selected_samples]
+            [
+                {
+                    "input": s.input_data, 
+                    "output": s.output_data,
+                    "messages": s.to_conversation()
+                } 
+                for s in selected_samples
+            ]
         )
 
         # Fine-tune the model (with optional step-level checkpoint resume)
@@ -571,6 +648,15 @@ def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False
         train_dataset = Dataset.from_list(model._training_data)
 
         def format_example(example):
+            if "messages" in example:
+                from autotrain.templates import apply_chat_template
+                return {
+                    "text": apply_chat_template(
+                        messages=example["messages"],
+                        template=model._template,
+                    )
+                }
+
             if hasattr(model, "_template") and model._template:
                 messages = example.get("messages", [])
                 if not messages and "input_data" in example:

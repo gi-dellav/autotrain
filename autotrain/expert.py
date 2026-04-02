@@ -42,6 +42,8 @@ class ExpertPrompts:
     solve: Optional[str] = None
     select: Optional[str] = None
     check: Optional[str] = None
+    rewrite: Optional[str] = None
+    review: Optional[str] = None
 
     def get_produce(self, topic: str, format: str = "json") -> str:
         """Get the produce prompt, using bake_producer if no custom prompt is set.
@@ -90,6 +92,24 @@ class ExpertPrompts:
         from .prompts import CHECKER_DEFAULT
 
         return self.check if self.check else CHECKER_DEFAULT
+
+    def get_rewrite(self) -> str:
+        """Get the rewrite prompt using the default constant if no custom prompt is set.
+
+        Returns:
+            The rewrite prompt string.
+        """
+        from .prompts import REWRITE_DEFAULT
+
+        return self.rewrite if self.rewrite else REWRITE_DEFAULT
+
+    def get_review(self) -> str:
+        """Get the review prompt.
+
+        Returns:
+            The review prompt string.
+        """
+        return self.review if self.review else "You are an expert reviewer."
 
 
 class Expert:
@@ -446,6 +466,35 @@ class Expert:
             "expert_model": self.model_name,
             "strict": strict,
         }
+
+    def rewrite(
+        self,
+        input_data: str,
+        output_data: str,
+        feedback: Optional[str] = None,
+    ) -> str:
+        """
+        Rewrite an incorrect solution to be correct.
+
+        Args:
+            input_data: The original problem/input
+            output_data: The proposed (incorrect) solution
+            feedback: Optional feedback/explanation of what's wrong
+
+        Returns:
+            The expert's corrected solution
+        """
+        prompt = self.prompts.get_rewrite()
+        prompt += f"\n\nProblem: {input_data}\n\nIncorrect Solution: {output_data}\n\n"
+        if feedback:
+            prompt += f"Feedback on Errors: {feedback}\n\n"
+
+        prompt += "Corrected Solution:"
+
+        return self._call_litellm(
+            prompt=prompt,
+            system_prompt="You are an expert rewriter. Provide only the corrected solution.",
+        )
 
     def compare(
         self,

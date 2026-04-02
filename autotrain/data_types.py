@@ -20,6 +20,18 @@ class Sample:
             "metadata": self.metadata,
         }
 
+    def to_conversation(self) -> List[Dict[str, str]]:
+        """
+        Convert sample to conversation format.
+
+        Returns:
+            List of messages (User, Assistant)
+        """
+        return [
+            {"role": "user", "content": self.input_data},
+            {"role": "assistant", "content": self.output_data},
+        ]
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Sample":
         """Create sample from dictionary."""
@@ -60,10 +72,19 @@ class VisionSample(Sample):
         )
 
     def to_conversation(self) -> List[Dict[str, Any]]:
-        """Convert to conversation format for vision models."""
+        """
+        Convert to conversation format for vision models.
+
+        Returns:
+            List of messages (User, Assistant)
+        """
         content = []
         for img in self.images:
-            content.append({"type": "image", "image": img})
+            if isinstance(img, str):
+                # Handle both URL and local path as URL for convenience
+                content.append({"type": "image_url", "image_url": {"url": img}})
+            else:
+                content.append({"type": "image", "image": img})
         content.append({"type": "text", "text": self.input_data})
 
         return [

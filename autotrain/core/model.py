@@ -36,6 +36,7 @@ class Model:
         inference_config: Optional[InferenceConfig] = None,
         prompts: Optional[Prompts] = None,
         enable_checker: bool = False,
+        checker_rewrite_mode: bool = False,
         checkpoint_dir: Optional[str] = None,
         keep_best_checkpoint: bool = True,
         scalable_config: Optional[ScalableTrainingConfig] = None,
@@ -60,6 +61,7 @@ class Model:
         self.inference_config = inference_config or InferenceConfig()
         self.prompts = prompts or Prompts()
         self.enable_checker = enable_checker
+        self.checker_rewrite_mode = checker_rewrite_mode
         self._scalable_config = scalable_config or ScalableTrainingConfig()
         self.thinking = thinking
 
@@ -98,6 +100,8 @@ class Model:
         # Dataset storage
         self._samples: list[Sample] = []
         self._training_data: list[dict] = []
+        self.expert_training_data: list[dict] = []
+        self.collect_expert_data = False
 
         # Training history
         self._benchmark_history: list[dict] = []
@@ -447,6 +451,28 @@ class Model:
         from autotrain.core.management import generate
 
         return generate(self, prompt, temperature, max_tokens, top_p)
+
+    def export_expert_data(self, path: Union[str, Path]) -> None:
+        """
+        Export collected expert training data to a file.
+
+        Args:
+            path: Output file path (.json or .jsonl)
+        """
+        import json
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if str(path).endswith(".jsonl"):
+            with open(path, "w") as f:
+                for item in self.expert_training_data:
+                    f.write(json.dumps(item) + "\n")
+        else:
+            with open(path, "w") as f:
+                json.dump(self.expert_training_data, f, indent=2)
+
+        print(f"Expert training data exported to {path} ({len(self.expert_training_data)} items)")
 
     # ==================== Tool Management ====================
 

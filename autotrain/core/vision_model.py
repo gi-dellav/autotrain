@@ -93,6 +93,8 @@ class VisionModel:
 
         self._samples: list[VisionSample] = []
         self._training_data: list[dict] = []
+        self.expert_training_data: list[dict] = []
+        self.collect_expert_data = False
 
         self._benchmark_history: list[dict] = []
 
@@ -271,6 +273,13 @@ class VisionModel:
         """Add a training sample."""
         if isinstance(sample, VisionSample):
             self._samples.append(sample)
+            self._training_data.append({
+                "input_data": sample.input_data,
+                "output_data": sample.output_data,
+                "images": sample.images,
+                "messages": sample.to_conversation(),
+                "metadata": sample.metadata,
+            })
         else:
             vision_sample = VisionSample(
                 input_data=sample.input_data,
@@ -278,6 +287,12 @@ class VisionModel:
                 metadata=sample.metadata,
             )
             self._samples.append(vision_sample)
+            self._training_data.append({
+                "input_data": sample.input_data,
+                "output_data": sample.output_data,
+                "messages": vision_sample.to_conversation(),
+                "metadata": sample.metadata,
+            })
 
     def get_samples(self) -> List[VisionSample]:
         """Get all training samples."""
@@ -400,6 +415,28 @@ class VisionModel:
         data = [sample.to_dict() for sample in self._training_data]
         path.write_text(json.dumps(data, indent=2, default=str))
         print(f"Dataset exported to {path} ({len(data)} samples)")
+
+    def export_expert_data(self, path: Union[str, Path]) -> None:
+        """
+        Export collected expert training data to a file.
+
+        Args:
+            path: Output file path (.json or .jsonl)
+        """
+        import json
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if str(path).endswith(".jsonl"):
+            with open(path, "w") as f:
+                for item in self.expert_training_data:
+                    f.write(json.dumps(item) + "\n")
+        else:
+            with open(path, "w") as f:
+                json.dump(self.expert_training_data, f, indent=2)
+
+        print(f"Expert training data exported to {path} ({len(self.expert_training_data)} items)")
 
     def import_dataset(self, path: Union[str, Path]) -> None:
         """Import training data from a file."""

@@ -25,11 +25,13 @@ class Checker:
         prompt: Union[str, list[str]],
         inference_config: "InferenceConfig",
         experts: Optional[list["Expert"]] = None,
+        rewrite_mode: bool = False,
     ):
         self.model = model
         self.prompt = prompt
         self.inference_config = inference_config
         self._experts = experts or []
+        self.rewrite_mode = rewrite_mode
 
     @property
     def experts(self) -> list["Expert"]:
@@ -54,7 +56,7 @@ class Checker:
             samples: Samples to verify
 
         Returns:
-            Verified samples (only correct ones)
+            Verified samples (only correct or rewritten ones)
         """
         verified = []
 
@@ -67,8 +69,22 @@ class Checker:
                 )
                 sample.metadata["check"] = check_result
 
+                is_correct = check_result.get("is_correct", False)
+                skipped = check_result.get("skipped", False)
+
+                # If rewrite mode is enabled and sample is incorrect, rewrite it
+                if not is_correct and not skipped and self.rewrite_mode:
+                    explanation = check_result.get("explanation", "")
+                    sample.metadata["original_output"] = sample.output_data
+                    rewritten_output = expert.rewrite(
+                        sample.input_data, sample.output_data, feedback=explanation
+                    )
+                    sample.output_data = rewritten_output
+                    sample.metadata["rewritten"] = True
+                    # After rewrite, we treat it as correct for the purpose of keeping it
+                    verified.append(sample)
                 # Only keep correct samples (or skipped samples if avoid_checking_same_sample is True)
-                if check_result.get("is_correct", False) or check_result.get("skipped"):
+                elif is_correct or skipped:
                     verified.append(sample)
             else:
                 # No expert, pass all samples
