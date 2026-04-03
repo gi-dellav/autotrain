@@ -196,7 +196,7 @@ class TrainingConfig:
         scheduler_type: Scheduler type
     """
 
-    epochs: int = 1
+    epochs: int = 2
     epochs_fn: Optional[Callable[[int], int]] = None
     batch_size: int = 4
     gradient_accumulation_steps: int = 16
