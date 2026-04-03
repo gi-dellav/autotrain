@@ -446,11 +446,29 @@ class Model:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         top_p: Optional[float] = None,
+        iteration: Optional[int] = None,
     ) -> str:
-        """Generate text from the model."""
-        from autotrain.core.management import generate
+        """Generate text from the model.
 
-        return generate(self, prompt, temperature, max_tokens, top_p)
+        Args:
+            prompt: The prompt to generate from
+            temperature: Override temperature (takes precedence over config)
+            max_tokens: Override max tokens
+            top_p: Override top_p
+            iteration: Current iteration number for dynamic temperature evaluation
+        """
+        from autotrain.core.management import generate
+        from autotrain.utils.function_evaluator import evaluate_temperature
+
+        eff_temperature: Optional[float] = None
+        if temperature is not None:
+            eff_temperature = temperature
+        elif self.inference_config.temperature_fn is not None:
+            if iteration is None:
+                iteration = self._current_iteration
+            eff_temperature = evaluate_temperature(self.inference_config.temperature_fn, iteration)
+
+        return generate(self, prompt, eff_temperature, max_tokens, top_p)
 
     def export_expert_data(self, path: Union[str, Path]) -> None:
         """

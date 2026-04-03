@@ -59,8 +59,29 @@ def _init_components(
         )
 
 
-def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
+def _fine_tune(model: "Model", iteration: int, resume_from_checkpoint: bool = False) -> None:
     """Fine-tune the model on accumulated training data from scratch."""
+    from autotrain.utils.function_evaluator import (
+        evaluate_epochs,
+        evaluate_learning_rate,
+        evaluate_lora_alpha,
+        evaluate_lora_dropout,
+    )
+
+    iteration = max(0, iteration)
+    epochs = evaluate_epochs(
+        model._training_config.epochs_fn or model._training_config.epochs, iteration
+    )
+    learning_rate = evaluate_learning_rate(
+        model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration
+    )
+    lora_alpha = evaluate_lora_alpha(
+        model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration
+    )
+    lora_dropout = evaluate_lora_dropout(
+        model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration
+    )
+
     if not model._training_data:
         return
 
@@ -85,7 +106,7 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
                         template=model._template,
                     )
                 }
-            
+
             # Fallback to standard input/output
             return {
                 "text": format_sample(
@@ -104,8 +125,8 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
             model=model._fast_model,
             r=model._peft_config.r,
             target_modules=model._peft_config.get_target_modules(),
-            lora_alpha=model._peft_config.lora_alpha,
-            lora_dropout=model._peft_config.lora_dropout,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
             bias=model._peft_config.bias,
             use_gradient_checkpointing="unsloth" if use_gc else False,
         )
@@ -122,10 +143,10 @@ def _fine_tune(model: "Model", resume_from_checkpoint: bool = False) -> None:
         # Training arguments
         training_args = TrainingArguments(  # type: ignore[call-arg]
             output_dir="./training_output",
-            num_train_epochs=model._training_config.epochs,
+            num_train_epochs=epochs,
             per_device_train_batch_size=batch_size,
             gradient_accumulation_steps=model._training_config.gradient_accumulation_steps,
-            learning_rate=model._training_config.learning_rate,
+            learning_rate=learning_rate,
             weight_decay=model._training_config.weight_decay,
             warmup_ratio=model._training_config.warmup_ratio,
             max_grad_norm=model._training_config.max_grad_norm,
@@ -342,11 +363,13 @@ def train(
             for s in output_samples:
                 # If produced by expert, collect it
                 if "expert" in s.metadata.get("producer", ""):
-                    model.expert_training_data.append({
-                        "type": "production",
-                        "messages": s.to_conversation(),
-                        "metadata": s.metadata
-                    })
+                    model.expert_training_data.append(
+                        {
+                            "type": "production",
+                            "messages": s.to_conversation(),
+                            "metadata": s.metadata,
+                        }
+                    )
 
         # Checker: Optional verification
         if model.enable_checker and model._checker:
@@ -365,28 +388,38 @@ def train(
                 if "check" in s.metadata:
                     check_res = s.metadata["check"]
                     # Store checker explanation as part of the output (Chain of Thought)
-                    model.expert_training_data.append({
-                        "type": "verification",
-                        "input": s.input_data,
-                        "output": s.output_data,
-                        "explanation": check_res.get("explanation", ""),
-                        "is_correct": check_res.get("is_correct"),
-                        "messages": [
-                            {"role": "user", "content": f"Problem: {s.input_data}\n\nSolution: {s.output_data}\n\nIs this correct?"},
-                            {"role": "assistant", "content": check_res.get("explanation", "")}
-                        ]
-                    })
-                    if s.metadata.get("rewritten"):
-                         model.expert_training_data.append({
-                            "type": "rewrite",
+                    model.expert_training_data.append(
+                        {
+                            "type": "verification",
                             "input": s.input_data,
-                            "original_output": s.metadata.get("original_output"),
-                            "corrected_output": s.output_data,
+                            "output": s.output_data,
+                            "explanation": check_res.get("explanation", ""),
+                            "is_correct": check_res.get("is_correct"),
                             "messages": [
-                                {"role": "user", "content": f"Problem: {s.input_data}\n\nIncorrect Solution: {s.metadata.get('original_output')}\n\nCorrect the solution."},
-                                {"role": "assistant", "content": s.output_data}
-                            ]
-                        })
+                                {
+                                    "role": "user",
+                                    "content": f"Problem: {s.input_data}\n\nSolution: {s.output_data}\n\nIs this correct?",
+                                },
+                                {"role": "assistant", "content": check_res.get("explanation", "")},
+                            ],
+                        }
+                    )
+                    if s.metadata.get("rewritten"):
+                        model.expert_training_data.append(
+                            {
+                                "type": "rewrite",
+                                "input": s.input_data,
+                                "original_output": s.metadata.get("original_output"),
+                                "corrected_output": s.output_data,
+                                "messages": [
+                                    {
+                                        "role": "user",
+                                        "content": f"Problem: {s.input_data}\n\nIncorrect Solution: {s.metadata.get('original_output')}\n\nCorrect the solution.",
+                                    },
+                                    {"role": "assistant", "content": s.output_data},
+                                ],
+                            }
+                        )
 
         # Splitter: Select useful samples based on sample_multiplier
         assert model._splitter is not None, "Splitter should be initialized"
@@ -400,33 +433,31 @@ def train(
                     comp = s.metadata["comparison_result"]
                     # Usually Splitter compares two samples
                     # We can store this as a preference pair
-                    model.expert_training_data.append({
-                        "type": "selection",
-                        "prompt": s.input_data,
-                        "chosen": s.output_data,
-                        "metadata": comp,
-                        # Formatting for DPO
-                        "dpo_messages": [
-                             {"role": "user", "content": s.input_data},
-                             {"role": "assistant", "content": s.output_data}
-                        ]
-                    })
+                    model.expert_training_data.append(
+                        {
+                            "type": "selection",
+                            "prompt": s.input_data,
+                            "chosen": s.output_data,
+                            "metadata": comp,
+                            # Formatting for DPO
+                            "dpo_messages": [
+                                {"role": "user", "content": s.input_data},
+                                {"role": "assistant", "content": s.output_data},
+                            ],
+                        }
+                    )
 
         # Add to training data
         model._samples.extend(selected_samples)
         model._training_data.extend(
             [
-                {
-                    "input": s.input_data, 
-                    "output": s.output_data,
-                    "messages": s.to_conversation()
-                } 
+                {"input": s.input_data, "output": s.output_data, "messages": s.to_conversation()}
                 for s in selected_samples
             ]
         )
 
         # Fine-tune the model (with optional step-level checkpoint resume)
-        _fine_tune(model, resume_from_checkpoint=resume_from_checkpoint)
+        _fine_tune(model, iteration, resume_from_checkpoint=resume_from_checkpoint)
         print(f"Fine-tuning completed for iteration {iteration + 1}")
 
         # Evaluate on benchmark
@@ -583,7 +614,7 @@ def train_vision_model(
         for sample in input_samples:
             model.add_sample(sample)
 
-        _fine_tune_vision(model)
+        _fine_tune_vision(model, iteration)
 
         if benchmark:
             accuracy = benchmark.evaluate(model)
@@ -634,8 +665,31 @@ def train_vision_model(
     return training_summary
 
 
-def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False) -> None:
+def _fine_tune_vision(
+    model: "VisionModel", iteration: int, resume_from_checkpoint: bool = False
+) -> None:
     """Fine-tune the vision model on accumulated training data."""
+    from autotrain.utils.function_evaluator import (
+        evaluate_epochs,
+        evaluate_learning_rate,
+        evaluate_lora_alpha,
+        evaluate_lora_dropout,
+    )
+
+    iteration = max(0, iteration)
+    epochs = evaluate_epochs(
+        model._training_config.epochs_fn or model._training_config.epochs, iteration
+    )
+    learning_rate = evaluate_learning_rate(
+        model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration
+    )
+    lora_alpha = evaluate_lora_alpha(
+        model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration
+    )
+    lora_dropout = evaluate_lora_dropout(
+        model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration
+    )
+
     if not model._training_data:
         return
 
@@ -650,6 +704,7 @@ def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False
         def format_example(example):
             if "messages" in example:
                 from autotrain.templates import apply_chat_template
+
                 return {
                     "text": apply_chat_template(
                         messages=example["messages"],
@@ -685,8 +740,8 @@ def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False
             model=model._fast_model,
             r=model._peft_config.r,
             target_modules=model._peft_config.get_target_modules(),
-            lora_alpha=model._peft_config.lora_alpha,
-            lora_dropout=model._peft_config.lora_dropout,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
             bias=model._peft_config.bias,
             use_gradient_checkpointing=use_gc if use_gc else "unsloth",
         )
@@ -696,8 +751,8 @@ def _fine_tune_vision(model: "VisionModel", resume_from_checkpoint: bool = False
             output_dir=output_dir,
             per_device_train_batch_size=model._training_config.batch_size,
             gradient_accumulation_steps=model._training_config.gradient_accumulation_steps,
-            learning_rate=model._training_config.learning_rate,
-            num_train_epochs=model._training_config.epochs,
+            learning_rate=learning_rate,
+            num_train_epochs=epochs,
             max_steps=model._training_config.max_steps,
             warmup_ratio=model._training_config.warmup_ratio,
             logging_steps=model._training_config.logging_steps,

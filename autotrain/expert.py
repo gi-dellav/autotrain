@@ -302,6 +302,7 @@ class Expert:
         metadata: Optional[dict] = None,
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
+        iteration: Optional[int] = None,
     ) -> str:
         """
         Solve a problem as an expert.
@@ -311,14 +312,25 @@ class Expert:
             metadata: Optional sample metadata to check for self-solving
             system_prompt: Optional system prompt override
             temperature: Optional temperature override
+            iteration: Current iteration number for dynamic temperature evaluation
 
         Returns:
             The expert's solution
         """
+        from autotrain.utils.function_evaluator import evaluate_temperature
+
         if self.avoid_solving_same_sample and metadata is not None:
             producer_key = f"expert:{self.model_name}"
             if metadata.get("producer") == producer_key:
                 return ""
+
+        effective_temp: Optional[float] = None
+        if temperature is not None:
+            effective_temp = temperature
+        elif self.inference_config.temperature_fn is not None:
+            if iteration is None:
+                iteration = 0
+            effective_temp = evaluate_temperature(self.inference_config.temperature_fn, iteration)
 
         prompt = self.prompts.get_solve()
         prompt += f"\n\n{input_data}"
@@ -326,7 +338,7 @@ class Expert:
             prompt=prompt,
             system_prompt=system_prompt
             or "You are an expert assistant. Provide clear, accurate solutions.",
-            temperature=temperature,
+            temperature=effective_temp,
         )
 
     def solve_batch(

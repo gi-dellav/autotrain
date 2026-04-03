@@ -2,7 +2,7 @@
 
 import random
 from dataclasses import dataclass
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
 
 
 def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
@@ -18,9 +18,21 @@ def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
 
 @dataclass
 class InferenceConfig:
-    """Configuration for inference properties."""
+    """Configuration for inference properties.
+
+    Args:
+        temperature: Static temperature value (0.0-2.0)
+        temperature_fn: Dynamic temperature as callable - takes iteration (int) and
+            returns temperature (float). If set, takes precedence over temperature.
+        max_tokens: Maximum tokens to generate
+        top_p: Nucleus sampling threshold
+        frequency_penalty: Frequency penalty for generation
+        presence_penalty: Presence penalty for generation
+        thinking: Enable thinking mode
+    """
 
     temperature: float = 0.7
+    temperature_fn: Optional[Callable[[int], float]] = None
     max_tokens: int = 1024
     top_p: float = 0.9
     frequency_penalty: float = 0.0
@@ -119,11 +131,27 @@ class PEFTConfig:
 
     Default values follow Unsloth's recommended settings.
     See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
+
+    Args:
+        r: LoRA rank
+        lora_alpha: Static LoRA alpha scaling parameter
+        lora_alpha_fn: Dynamic LoRA alpha as callable - takes iteration (int) and
+            returns alpha (int). If set, takes precedence over lora_alpha.
+        lora_dropout: Static LoRA dropout
+        lora_dropout_fn: Dynamic LoRA dropout as callable - takes iteration (int) and
+            returns dropout (float). If set, takes precedence over lora_dropout.
+        bias: Bias type
+        use_gradient_checkpointing: Gradient checkpointing setting
+        target_modules: Custom target modules
+        use_rslora: Use RSLoRA
+        loftq_config: LoftQ configuration
     """
 
     r: int = 64
     lora_alpha: int = 128
+    lora_alpha_fn: Optional[Callable[[int], int]] = None
     lora_dropout: float = 0.0
+    lora_dropout_fn: Optional[Callable[[int], float]] = None
     bias: str = "none"
     use_gradient_checkpointing: str = "unsloth"
     target_modules: Optional[list[str]] = None
@@ -144,12 +172,36 @@ class TrainingConfig:
 
     Default values follow Unsloth's recommended settings.
     See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
+
+    Args:
+        epochs: Static number of epochs per training iteration
+        epochs_fn: Dynamic epochs as callable - takes iteration (int) and returns
+            epoch count (int). If set, takes precedence over epochs.
+        batch_size: Training batch size
+        gradient_accumulation_steps: Gradient accumulation steps
+        learning_rate: Static learning rate
+        learning_rate_fn: Dynamic learning rate as callable - takes iteration (int) and
+            returns learning rate (float). If set, takes precedence over learning_rate.
+        weight_decay: Weight decay
+        warmup_ratio: Warmup ratio
+        warmup_steps: Warmup steps
+        max_grad_norm: Max gradient norm
+        logging_steps: Logging steps
+        save_strategy: Save strategy
+        save_steps: Save steps
+        eval_strategy: Evaluation strategy
+        eval_steps: Evaluation steps
+        save_total_limit: Total save limit
+        seed: Random seed
+        scheduler_type: Scheduler type
     """
 
     epochs: int = 1
+    epochs_fn: Optional[Callable[[int], int]] = None
     batch_size: int = 4
     gradient_accumulation_steps: int = 16
     learning_rate: float = 1e-5
+    learning_rate_fn: Optional[Callable[[int], float]] = None
     weight_decay: float = 0.01
     warmup_ratio: float = 0.15
     warmup_steps: int = 0

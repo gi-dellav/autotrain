@@ -132,15 +132,18 @@ class Solver:
             List of samples with filled outputs
         """
         solved_samples = []
+        iteration = getattr(self.model, "_current_iteration", 0)
 
         for sample in samples:
             expert, is_expert = self._select_source()
 
             if is_expert and expert is not None:
-                output = expert.solve(sample.input_data, metadata=sample.metadata)
+                output = expert.solve(
+                    sample.input_data, metadata=sample.metadata, iteration=iteration
+                )
                 sample.metadata["solver"] = f"expert:{expert.model_name}"
             else:
-                output = self._model_solve(sample.input_data)
+                output = self._model_solve(sample.input_data, iteration=iteration)
                 sample.metadata["solver"] = "model"
 
             sample.output_data = output
@@ -148,12 +151,13 @@ class Solver:
 
         return solved_samples
 
-    def _model_solve(self, input_data: str) -> str:
+    def _model_solve(self, input_data: str, iteration: int = 0) -> str:
         """
         Solve using the fine-tuned model.
 
         Args:
             input_data: The input/problem to solve
+            iteration: Current iteration number for dynamic temperature
 
         Returns:
             Model's solution as a string
@@ -171,6 +175,7 @@ class Solver:
                     temperature=self.inference_config.temperature,
                     max_tokens=self.inference_config.max_tokens,
                     top_p=self.inference_config.top_p,
+                    iteration=iteration,
                 )
 
                 # Check if result is a string (not a MagicMock)
