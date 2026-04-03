@@ -45,7 +45,7 @@ class VisionProducer:
         task_description: Optional[str] = None,
     ) -> List["VisionSample"]:
         """
-        Generate vision-language samples.
+        Generate vision-language samples in parallel.
 
         Args:
             count: Number of samples to generate
@@ -55,26 +55,28 @@ class VisionProducer:
         Returns:
             List of generated VisionSample
         """
-        from autotrain.data_types import VisionSample
+        from concurrent.futures import ThreadPoolExecutor
 
-        samples = []
+        from autotrain.data_types import VisionSample
 
         task_desc = task_description or self.prompt or "Describe this image"
 
-        for i in range(count):
-            if images and i < len(images):
-                image = images[i]
-            else:
-                image = None
-
+        def _generate_one(i):
+            image = images[i] if images and i < len(images) else None
             input_data = self._generate_input(i, task_desc)
-            sample = VisionSample(
+            return VisionSample(
                 input_data=input_data,
                 output_data="",
                 images=[image] if image else [],
                 metadata={"source": "producer", "producer": "vision_model", "iteration": 0},
             )
-            samples.append(sample)
+
+        max_workers = self.model.inference_config.max_workers
+        if not isinstance(max_workers, int):
+            max_workers = 8
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            samples = list(executor.map(_generate_one, range(count)))
 
         return samples
 

@@ -1,4 +1,7 @@
 .kilo/
+ARTICLE.md
+ARTICLE.pdf
+CURRENT_PLAN_COT.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

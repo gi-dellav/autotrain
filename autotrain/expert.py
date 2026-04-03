@@ -345,18 +345,28 @@ class Expert:
         self,
         inputs: list[str],
         system_prompt: Optional[str] = None,
+        max_workers: int = 8,
     ) -> list[str]:
         """
-        Solve multiple problems.
+        Solve multiple problems in parallel.
 
         Args:
             inputs: List of inputs to solve
             system_prompt: Optional system prompt
+            max_workers: Maximum number of parallel workers
 
         Returns:
             List of solutions
         """
-        return [self.solve(inp, system_prompt) for inp in inputs]
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _solve_one(input_data):
+            return self.solve(input_data, system_prompt=system_prompt)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(_solve_one, inputs))
+
+        return results
 
     def select(self, samples: list[str]) -> str:
         """

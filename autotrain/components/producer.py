@@ -39,7 +39,7 @@ class Producer:
         self, count: int, topic: str = "general knowledge training samples"
     ) -> list["Sample"]:
         """
-        Generate input samples.
+        Generate input samples in parallel.
 
         Args:
             count: Number of samples to generate
@@ -49,17 +49,16 @@ class Producer:
         Returns:
             List of generated samples
         """
-        from autotrain.data_types import Sample
+        from concurrent.futures import ThreadPoolExecutor
 
-        samples = []
+        from autotrain.data_types import Sample
 
         # Get the baked prompt for the topic
         prompt = self.model.prompts.get_producer(topic)
 
-        # Use the model to generate diverse inputs
-        for i in range(count):
+        def _generate_one(i):
             input_data = self._generate_input(i, prompt)
-            sample = Sample(
+            return Sample(
                 input_data=input_data,
                 output_data="",  # Will be filled by Solver
                 metadata={
@@ -69,7 +68,13 @@ class Producer:
                     "topic": topic,
                 },
             )
-            samples.append(sample)
+
+        max_workers = self.model.inference_config.max_workers
+        if not isinstance(max_workers, int):
+            max_workers = 8
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            samples = list(executor.map(_generate_one, range(count)))
 
         return samples
 

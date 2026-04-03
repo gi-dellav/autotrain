@@ -50,7 +50,7 @@ class Checker:
 
     def verify(self, samples: list["Sample"]) -> list["Sample"]:
         """
-        Verify the correctness of samples.
+        Verify the correctness of samples in parallel.
 
         Args:
             samples: Samples to verify
@@ -58,44 +58,49 @@ class Checker:
         Returns:
             Verified samples (only correct or rewritten ones)
         """
-        verified = []
+        from concurrent.futures import ThreadPoolExecutor
 
-        for sample in samples:
-            if self._experts:
-                # Use first expert for checking
-                expert = self._experts[0]
-                check_result = expert.check(
-                    sample.input_data, sample.output_data, metadata=sample.metadata
-                )
-                sample.metadata["check"] = check_result
-
-                is_correct = check_result.get("is_correct", False)
-                skipped = check_result.get("skipped", False)
-
-                # If rewrite mode is enabled and sample is incorrect, rewrite it
-                if not is_correct and not skipped and self.rewrite_mode:
-                    explanation = check_result.get("explanation", "")
-                    sample.metadata["original_output"] = sample.output_data
-                    rewritten_output = expert.rewrite(
-                        sample.input_data, sample.output_data, feedback=explanation
-                    )
-                    sample.output_data = rewritten_output
-                    sample.metadata["rewritten"] = True
-                    # After rewrite, we treat it as correct for the purpose of keeping it
-                    verified.append(sample)
-                # Only keep correct samples (or skipped samples if avoid_checking_same_sample is True)
-                elif is_correct or skipped:
-                    verified.append(sample)
-            else:
-                # No expert, pass all samples
+        if not self._experts:
+            # No expert, pass all samples
+            for sample in samples:
                 sample.metadata["check"] = {
                     "is_correct": True,
                     "explanation": "No checker available",
                     "checker": "none",
                 }
-                verified.append(sample)
+            return samples
 
-        return verified
+        def _verify_one(sample):
+            expert = self._experts[0]
+            check_result = expert.check(
+                sample.input_data, sample.output_data, metadata=sample.metadata
+            )
+            sample.metadata["check"] = check_result
+
+            is_correct = check_result.get("is_correct", False)
+            skipped = check_result.get("skipped", False)
+
+            if not is_correct and not skipped and self.rewrite_mode:
+                explanation = check_result.get("explanation", "")
+                sample.metadata["original_output"] = sample.output_data
+                rewritten_output = expert.rewrite(
+                    sample.input_data, sample.output_data, feedback=explanation
+                )
+                sample.output_data = rewritten_output
+                sample.metadata["rewritten"] = True
+                return sample
+            elif is_correct or skipped:
+                return sample
+            return None
+
+        max_workers = self.model.inference_config.max_workers
+        if not isinstance(max_workers, int):
+            max_workers = 8
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(_verify_one, samples))
+
+        return [r for r in results if r is not None]
 
 
 __all__ = ["Checker"]

@@ -1,49 +1,64 @@
 """Model training and expert management."""
 
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from pathlib import Path
 
 from autotrain.components import ExpertWeight
-from autotrain.data_types import Sample
+from autotrain.data_types import Sample, VisionSample
 
 if TYPE_CHECKING:
     from autotrain.benchmark import Benchmark
-    from autotrain.core.model import Model
-    from autotrain.core.vision_model import VisionModel
-    from autotrain.expert import Expert, VisionExpert
-    from autotrain.templates import InstructionTemplate
+    from autotrain.core.base_model import BaseModel
+    from autotrain.expert import Expert
 
 
 def _init_components(
-    model: "Model",
-    experts: Optional[list[tuple["Expert", float]]] = None,
+    model: "BaseModel",
+    experts: Optional[list] = None,
 ):
     """Initialize pipeline components."""
     from autotrain.components import Checker, Producer, Solver, Splitter
+    from autotrain.components.vision_producer import VisionProducer
 
-    model._producer = Producer(
-        model=model,
-        prompt=model.prompts.producer,
-        inference_config=model.inference_config,
-    )
+    # Check if it's a vision model
+    is_vision = hasattr(model, "processor")
+
+    if is_vision:
+        model._producer = VisionProducer(
+            model=model, # type: ignore
+            prompt=model.prompts.producer,
+            inference_config=model.inference_config,
+        )
+    else:
+        model._producer = Producer(
+            model=model, # type: ignore
+            prompt=model.prompts.producer,
+            inference_config=model.inference_config,
+        )
 
     # Initialize solver with multiple experts
     expert_weights = []
     if experts:
-        for expert in experts:
-            expert_weights.append(ExpertWeight(expert=expert, weight=expert.production_rate))
+        for exp_entry in experts:
+            if isinstance(exp_entry, tuple):
+                exp, weight = exp_entry
+                expert_weights.append(ExpertWeight(expert=exp, weight=weight))
+            elif hasattr(exp_entry, "production_rate"):
+                expert_weights.append(ExpertWeight(expert=exp_entry, weight=exp_entry.production_rate))
+            else:
+                expert_weights.append(ExpertWeight(expert=exp_entry, weight=1.0))
 
     model._solver = Solver(
-        model=model,
+        model=model, # type: ignore
         prompt=model.prompts.solver,
         inference_config=model.inference_config,
-        experts=expert_weights if expert_weights else None,  # type: ignore[arg-type]
+        experts=expert_weights if expert_weights else None,
     )
 
-    # Get experts list for other components
     expert_list = [ew.expert for ew in expert_weights] if expert_weights else []
 
     model._splitter = Splitter(
-        model=model,
+        model=model, # type: ignore
         prompt=model.prompts.splitter,
         inference_config=model.inference_config,
         experts=expert_list,
@@ -51,7 +66,7 @@ def _init_components(
 
     if model.enable_checker:
         model._checker = Checker(
-            model=model,
+            model=model, # type: ignore
             prompt=model.prompts.checker,
             inference_config=model.inference_config,
             experts=expert_list,
@@ -59,95 +74,115 @@ def _init_components(
         )
 
 
-def _fine_tune(model: "Model", iteration: int, resume_from_checkpoint: bool = False) -> None:
-    """Fine-tune the model on accumulated training data from scratch."""
+def _prune_old_training_data(model: "BaseModel", current_iteration: int, keep_last_n_iters: int) -> None:
+    """Remove training data from iterations older than keep_last_n_iters."""
+    if keep_last_n_iters <= 0:
+        return
+    
+    min_iteration = current_iteration - keep_last_n_iters + 1
+    
+    # Prune _training_data, but always keep initial samples (iteration == -1)
+    model._training_data = [
+        sample for sample in model._training_data
+        if sample.get("iteration", 0) == -1 or sample.get("iteration", 0) >= min_iteration
+    ]
+    
+    print(f"Pruned training data to keep last {keep_last_n_iters} iterations (min_iteration={min_iteration})")
+    print(f"Remaining training samples: {len(model._training_data)}")
+
+
+def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool = False) -> None:
+    """Fine-tune the model on accumulated training data."""
     from autotrain.utils.function_evaluator import (
+        evaluate_batch_size,
         evaluate_epochs,
         evaluate_learning_rate,
         evaluate_lora_alpha,
         evaluate_lora_dropout,
+        evaluate_lora_rank,
+        evaluate_weight_decay,
     )
 
     iteration = max(0, iteration)
-    epochs = evaluate_epochs(
-        model._training_config.epochs_fn or model._training_config.epochs, iteration
-    )
-    learning_rate = evaluate_learning_rate(
-        model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration
-    )
-    lora_alpha = evaluate_lora_alpha(
-        model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration
-    )
-    lora_dropout = evaluate_lora_dropout(
-        model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration
-    )
+    epochs = evaluate_epochs(model._training_config.epochs_fn or model._training_config.epochs, iteration)
+    learning_rate = evaluate_learning_rate(model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration)
+    lora_alpha = evaluate_lora_alpha(model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration)
+    lora_dropout = evaluate_lora_dropout(model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration)
+    lora_rank = evaluate_lora_rank(model._peft_config.lora_rank_fn or model._peft_config.r, iteration)
+    weight_decay = evaluate_weight_decay(model._training_config.weight_decay_fn or model._training_config.weight_decay, iteration)
 
     if not model._training_data:
         return
+
+    is_vision = hasattr(model, "processor")
 
     try:
         from datasets import Dataset
         from transformers import TrainingArguments
         from trl import SFTTrainer
-        from unsloth import FastLanguageModel
 
-        # Prepare dataset
         train_dataset = Dataset.from_list(model._training_data)
 
         from autotrain.templates import apply_chat_template, format_sample
 
-        # Format dataset for instruction tuning
         def format_example(example):
-            # Check if it's already in conversation format
             if "messages" in example:
                 return {
                     "text": apply_chat_template(
                         messages=example["messages"],
-                        template=model._template,
+                        template=getattr(model, "_template", None),
                     )
                 }
-
-            # Fallback to standard input/output
             return {
                 "text": format_sample(
-                    instruction=example.get("input", ""),
-                    output=example.get("output", ""),
-                    template=model._template,
+                    instruction=example.get("input", example.get("input_data", "")),
+                    output=example.get("output", example.get("output_data", "")),
+                    template=getattr(model, "_template", None),
                     model_name=model.model_name,
                 )
             }
 
         train_dataset = train_dataset.map(format_example)
 
-        # Setup PEFT from scratch
         use_gc = model._scalable_config.gradient_checkpointing
-        model._fast_model = FastLanguageModel.get_peft_model(
-            model=model._fast_model,
-            r=model._peft_config.r,
-            target_modules=model._peft_config.get_target_modules(),
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            bias=model._peft_config.bias,
-            use_gradient_checkpointing="unsloth" if use_gc else False,
-        )
+        
+        if is_vision:
+            from unsloth import FastVisionModel
+            model._fast_model = FastVisionModel.get_peft_model(
+                model=model._fast_model,
+                r=lora_rank,
+                target_modules=model._peft_config.get_target_modules(),
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                bias=model._peft_config.bias,
+                use_gradient_checkpointing="unsloth" if use_gc else False,
+            )
+        else:
+            from unsloth import FastLanguageModel
+            model._fast_model = FastLanguageModel.get_peft_model(
+                model=model._fast_model,
+                r=lora_rank,
+                target_modules=model._peft_config.get_target_modules(),
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                bias=model._peft_config.bias,
+                use_gradient_checkpointing="unsloth" if use_gc else False,
+            )
 
-        # Auto-tune batch size if enabled
-        batch_size = model._training_config.batch_size
-        if model._scalable_config.batch_size_auto_tune:
-            batch_size = model.auto_tune_batch_size()
+        batch_size = evaluate_batch_size(model._training_config.batch_size_fn or model._training_config.batch_size, iteration)
+        if not is_vision and model._scalable_config.batch_size_auto_tune:
+            batch_size = model.auto_tune_batch_size() # type: ignore
 
-        # Determine mixed precision
         fp16 = model._scalable_config.mixed_precision == "fp16"
         bf16 = model._scalable_config.mixed_precision == "bf16"
 
-        # Training arguments
-        training_args = TrainingArguments(  # type: ignore[call-arg]
+        training_args = TrainingArguments(
             output_dir="./training_output",
             num_train_epochs=epochs,
             per_device_train_batch_size=batch_size,
             gradient_accumulation_steps=model._training_config.gradient_accumulation_steps,
             learning_rate=learning_rate,
-            weight_decay=model._training_config.weight_decay,
+            weight_decay=weight_decay,
             warmup_ratio=model._training_config.warmup_ratio,
             max_grad_norm=model._training_config.max_grad_norm,
             logging_steps=model._training_config.logging_steps,
@@ -160,35 +195,35 @@ def _fine_tune(model: "Model", iteration: int, resume_from_checkpoint: bool = Fa
             fp16=fp16,
             bf16=bf16,
             dataloader_num_workers=model._scalable_config.num_workers,
-            pin_memory=model._scalable_config.pin_memory,
             report_to="none",
             lr_scheduler_type=model._training_config.scheduler_type,
         )
 
-        # Create trainer
         trainer = SFTTrainer(
-            model=model._fast_model,  # type: ignore[arg-type]
+            model=model._fast_model,
             tokenizer=model._tokenizer,
             train_dataset=train_dataset,
             dataset_text_field="text",
             args=training_args,
-        )  # type: ignore[call-arg]
+        )
 
-        # Train with optional checkpoint resume
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-    except ImportError as e:
-        print(f"Fine-tuning error (missing dependency): {e}")
     except Exception as e:
         print(f"Fine-tuning error: {e}")
 
 
+def _fine_tune_vision(model: "BaseModel", iteration: int, resume_from_checkpoint: bool = False) -> None:
+    """Compatibility alias for _fine_tune."""
+    _fine_tune(model, iteration, resume_from_checkpoint)
+
+
 def train(
-    model: "Model",
+    model: "BaseModel",
     k: Optional[int] = 100,
     i: int = 10,
-    experts: Optional[list["Expert"]] = None,
-    initial_samples: Optional[list[Sample]] = None,
+    experts: Optional[list] = None,
+    initial_samples: Optional[list] = None,
     benchmark: Optional["Benchmark"] = None,
     early_stopping: bool = False,
     early_stopping_patience: int = 3,
@@ -196,139 +231,50 @@ def train(
     checkpoint_every: int = 1,
     keep_best_model: bool = True,
     resume_from_checkpoint: bool = False,
-    template: Optional[Union["InstructionTemplate", str]] = None,
+    template: Optional[Any] = None,
     tools: Optional[list] = None,
     enable_tools: bool = False,
     max_tool_calls: int = 10,
     tool_choice: Optional[str] = None,
 ) -> dict:
-    """
-    Train the model through iterations.
+    """Unified training loop for both standard and vision models."""
+    if i <= 0: raise ValueError("i must be positive")
+    
+    if template is not None and hasattr(model, "set_template"):
+        model.set_template(template) # type: ignore
 
-    Args:
-        k: Number of samples to use for fine-tuning
-        i: Number of iterations
-        experts: List of Expert instances for multi-expert setup (uses each expert's production_rate)
-        initial_samples: Optional initial dataset to start with
-        benchmark: Optional benchmark for evaluation
-        early_stopping: Enable early stopping based on benchmark
-        early_stopping_patience: Iterations without improvement before stopping
-        early_stopping_threshold: Minimum improvement to count
-        checkpoint_every: Save checkpoint every N iterations
-        keep_best_model: Keep the best model even if not last iteration
-        resume_from_checkpoint: Resume from latest checkpoint if available
-        template: Optional template for instruction formatting
-        tools: List of tools to register for tool calling (e.g., [python, calculator])
-        enable_tools: Enable tool calling during training (default: False)
-        max_tool_calls: Maximum number of tool calls per generation (default: 10)
-        tool_choice: Tool choice option ("auto", "none", or specific tool name)
-
-    Returns:
-        Training summary dictionary
-
-    Example:
-        from autotrain.tools import python, calculator
-
-        model = Model(model_name="unsloth/Qwen3.5-27B-GGUF")
-        model.load_model()
-
-        # Train with tool calling enabled
-        model.train(
-            k=100,
-            i=10,
-            tools=[python, calculator],
-            enable_tools=True,
-            max_tool_calls=5,
-        )
-    """
-    # Validate parameters
-    if k is not None and k <= 0:
-        raise ValueError(f"k must be positive, got {k}")
-    if i <= 0:
-        raise ValueError(f"i (iterations) must be positive, got {i}")
-    if early_stopping_patience <= 0:
-        raise ValueError(f"early_stopping_patience must be positive, got {early_stopping_patience}")
-    if early_stopping_threshold < 0:
-        raise ValueError(
-            f"early_stopping_threshold must be non-negative, got {early_stopping_threshold}"
-        )
-    if checkpoint_every < 0:
-        raise ValueError(f"checkpoint_every must be non-negative, got {checkpoint_every}")
-
-    # Validate experts
-    if experts:
-        for idx, expert in enumerate(experts):
-            if not hasattr(expert, "model_name"):
-                raise ValueError(f"Expert at index {idx} must have a 'model_name' attribute")
-
-    # Set template if provided
-    if template is not None:
-        model.set_template(template)
-
-    # Setup tools for tool calling
     if tools or enable_tools:
         if tools:
-            for tool in tools:
-                model.add_tool(tool)
-            print(f"Registered {len(tools)} tools: {model.list_tools()}")
+            for tool in tools: model.add_tool(tool)
+        print(f"Tool calling enabled: {model.list_tools()}")
 
-        if enable_tools:
-            print(
-                f"Tool calling enabled (max_tool_calls={max_tool_calls}, tool_choice={tool_choice})"
-            )
-
-    # Handle resume from checkpoint
     if resume_from_checkpoint:
-        checkpoints = model._checkpoint_manager.list_checkpoints()
+        checkpoints = model.list_checkpoints()
         if checkpoints:
-            print(f"Resuming from latest checkpoint: {checkpoints[-1].checkpoint_id}")
             model.load_checkpoint(checkpoint_id=checkpoints[-1].checkpoint_id)
             start_iteration = model._current_iteration + 1
-        else:
-            start_iteration = 0
-    else:
-        start_iteration = 0
-
-    if k is None:
-        k = len(initial_samples) if initial_samples else 10
+        else: start_iteration = 0
+    else: start_iteration = 0
 
     if initial_samples:
-        model._samples.extend(initial_samples)
+        for s in initial_samples:
+            model.add_sample(s) # type: ignore
+            # Mark initial samples as iteration -1 (always kept)
+            if model._training_data:
+                model._training_data[-1]["iteration"] = -1
 
-    if not model._is_model_loaded:
-        try:
-            print("Loading model...")
-            model.load_model()
-        except ImportError as e:
-            raise ImportError(
-                f"Failed to load model: {e}\nMake sure unsloth is installed: pip install unsloth"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load model {model.model_name}: {e}")
+    if not model.is_loaded:
+        model.load_model()
 
-    # Set benchmark if provided
-    if benchmark:
-        model._benchmark = benchmark
-
-    # Validate benchmark configuration
-    if early_stopping and model._benchmark and model._benchmark.sample_count == 0:
-        print(
-            "Warning: Early stopping enabled but benchmark has no samples. "
-            "Disabling early stopping."
-        )
-        early_stopping = False
-
-    if model._benchmark and model._benchmark.sample_count > 0:
-        print(f"Benchmark configured with {model._benchmark.sample_count} samples")
-
-    _init_components(model, experts=experts)
+    if benchmark: model.set_benchmark(benchmark)
+    
+    _init_components(model, experts=experts or model.get_experts())
 
     best_accuracy = 0.0
-
-    training_summary: Dict[str, Any] = {
+    summary = {
         "iterations_completed": 0,
         "total_samples": 0,
-        "benchmark_history": [],  # type: ignore[var-annotated]
+        "benchmark_history": [],
         "stopped_early": False,
         "best_iteration": -1,
         "best_accuracy": 0.0,
@@ -338,453 +284,75 @@ def train(
         model._current_iteration = iteration
         print(f"\n=== Iteration {iteration + 1}/{start_iteration + i} ===")
 
-        # Reload the base model from scratch for higher-quality fine-tuning
         if iteration > start_iteration:
-            print("Reloading base model from scratch for this iteration...")
             model._unload_model()
-            model._is_model_loaded = False
             model.load_model()
-            # Re-initialize components with the reloaded model
-            _init_components(model, experts=experts)
+            _init_components(model, experts=experts or model.get_experts())
 
-        # Producer: Generate input samples
-        target_samples = k * model.sample_multiplier
-        assert model._producer is not None, "Producer should be initialized"
-        input_samples = model._producer.generate(target_samples)
-        print(f"Produced {len(input_samples)} input samples")
+        # Pipeline steps
+        target_k = k or (len(initial_samples) if initial_samples else 10)
+        input_samples = model._producer.generate(target_k * model.sample_multiplier) # type: ignore
+        print(f"Produced {len(input_samples)} samples")
 
-        # Solver: LLM solves the input samples
-        assert model._solver is not None, "Solver should be initialized"
-        output_samples = model._solver.solve(input_samples)
+        output_samples = model._solver.solve(input_samples) # type: ignore
         print(f"Solved {len(output_samples)} samples")
 
-        # Collect Producer and Solver expert data if enabled
-        if model.collect_expert_data:
-            for s in output_samples:
-                # If produced by expert, collect it
-                if "expert" in s.metadata.get("producer", ""):
-                    model.expert_training_data.append(
-                        {
-                            "type": "production",
-                            "messages": s.to_conversation(),
-                            "metadata": s.metadata,
-                        }
-                    )
-
-        # Checker: Optional verification
         if model.enable_checker and model._checker:
-            verified_samples = model._checker.verify(output_samples)
-            rejected_count = len(output_samples) - len(verified_samples)
-            rejection_rate = (rejected_count / len(output_samples) * 100) if output_samples else 0
-            print(
-                f"Verified {len(verified_samples)} samples ({rejected_count} rejected, "
-                f"{rejection_rate:.1f}% rejection rate)"
-            )
-            output_samples = verified_samples
+            output_samples = model._checker.verify(output_samples)
+            print(f"Verified {len(output_samples)} samples")
 
-        # Collect Checker expert data if enabled
-        if model.collect_expert_data and model.enable_checker:
-            for s in output_samples:
-                if "check" in s.metadata:
-                    check_res = s.metadata["check"]
-                    # Store checker explanation as part of the output (Chain of Thought)
-                    model.expert_training_data.append(
-                        {
-                            "type": "verification",
-                            "input": s.input_data,
-                            "output": s.output_data,
-                            "explanation": check_res.get("explanation", ""),
-                            "is_correct": check_res.get("is_correct"),
-                            "messages": [
-                                {
-                                    "role": "user",
-                                    "content": f"Problem: {s.input_data}\n\nSolution: {s.output_data}\n\nIs this correct?",
-                                },
-                                {"role": "assistant", "content": check_res.get("explanation", "")},
-                            ],
-                        }
-                    )
-                    if s.metadata.get("rewritten"):
-                        model.expert_training_data.append(
-                            {
-                                "type": "rewrite",
-                                "input": s.input_data,
-                                "original_output": s.metadata.get("original_output"),
-                                "corrected_output": s.output_data,
-                                "messages": [
-                                    {
-                                        "role": "user",
-                                        "content": f"Problem: {s.input_data}\n\nIncorrect Solution: {s.metadata.get('original_output')}\n\nCorrect the solution.",
-                                    },
-                                    {"role": "assistant", "content": s.output_data},
-                                ],
-                            }
-                        )
-
-        # Splitter: Select useful samples based on sample_multiplier
-        assert model._splitter is not None, "Splitter should be initialized"
-        selected_samples = model._splitter.select(output_samples, target_count=k)
+        selected_samples = model._splitter.select(output_samples, target_count=target_k) # type: ignore
         print(f"Selected {len(selected_samples)} samples")
 
-        # Collect Splitter expert data (DPO style) if enabled
-        if model.collect_expert_data:
-            for s in selected_samples:
-                if "comparison_result" in s.metadata:
-                    comp = s.metadata["comparison_result"]
-                    # Usually Splitter compares two samples
-                    # We can store this as a preference pair
-                    model.expert_training_data.append(
-                        {
-                            "type": "selection",
-                            "prompt": s.input_data,
-                            "chosen": s.output_data,
-                            "metadata": comp,
-                            # Formatting for DPO
-                            "dpo_messages": [
-                                {"role": "user", "content": s.input_data},
-                                {"role": "assistant", "content": s.output_data},
-                            ],
-                        }
-                    )
+        # Prune old training data if keep_last_n_iters is set
+        if model._training_config.keep_last_n_iters is not None:
+            _prune_old_training_data(model, iteration, model._training_config.keep_last_n_iters)
 
-        # Add to training data
-        model._samples.extend(selected_samples)
-        model._training_data.extend(
-            [
-                {"input": s.input_data, "output": s.output_data, "messages": s.to_conversation()}
-                for s in selected_samples
-            ]
-        )
+        # Add to training data with iteration tracking
+        for s in selected_samples:
+            model.add_sample(s) # type: ignore
+            # Add iteration metadata to the last added sample
+            if model._training_data:
+                model._training_data[-1]["iteration"] = iteration
 
-        # Fine-tune the model (with optional step-level checkpoint resume)
         _fine_tune(model, iteration, resume_from_checkpoint=resume_from_checkpoint)
-        print(f"Fine-tuning completed for iteration {iteration + 1}")
 
-        # Evaluate on benchmark
-        current_accuracy = 0.0
-        if model._benchmark:
-            metrics = model._benchmark.evaluate(
-                model=model, iteration=iteration, inference_config=model.inference_config
-            )
-            current_accuracy = metrics.accuracy
-            print(f"Benchmark accuracy: {current_accuracy:.4f}")
+        # Evaluation
+        curr_acc = 0.0
+        if model.get_benchmark():
+            metrics = model.get_benchmark().evaluate(model=model, iteration=iteration, inference_config=model.inference_config) # type: ignore
+            curr_acc = metrics.accuracy
+            print(f"Accuracy: {curr_acc:.4f}")
+            summary["benchmark_history"].append({"iteration": iteration, "accuracy": curr_acc})
 
-            training_summary["benchmark_history"].append(
-                {
-                    "iteration": iteration,
-                    "accuracy": current_accuracy,
-                    "average_score": metrics.average_score,
-                }
-            )
-
-            # Track best
-            if current_accuracy > best_accuracy:
-                best_accuracy = current_accuracy
-                training_summary["best_iteration"] = iteration
-                training_summary["best_accuracy"] = current_accuracy
-
-                # Save best model
+            if curr_acc > best_accuracy:
+                best_accuracy = curr_acc
+                summary["best_iteration"] = iteration
+                summary["best_accuracy"] = curr_acc
                 if keep_best_model:
-                    model.save_checkpoint(
-                        iteration=iteration,
-                        metadata={"is_best": True, "accuracy": current_accuracy},
-                    )
-
-                # Early stopping check
-                if early_stopping and model._benchmark:
-                    if model._benchmark.has_stagnated(
-                        threshold=early_stopping_threshold, iterations=early_stopping_patience
-                    ):
-                        print(
-                            f"\nEarly stopping triggered: no significant improvement in "
-                            f"{early_stopping_patience} iterations"
-                        )
-                        training_summary["stopped_early"] = True
-                        break
-
-        # Save checkpoint
-        if checkpoint_every > 0 and (iteration + 1) % checkpoint_every == 0:
-            model.save_checkpoint(iteration=iteration, metadata={"accuracy": current_accuracy})
-
-        training_summary["iterations_completed"] = iteration + 1
-        training_summary["total_samples"] = len(model._samples)
-
-    # Final summary
-    print("\n=== Training Summary ===")
-    print(f"Iterations completed: {training_summary['iterations_completed']}")
-    print(f"Total samples: {training_summary['total_samples']}")
-    print(f"Best iteration: {training_summary['best_iteration']}")
-    print(f"Best accuracy: {training_summary['best_accuracy']:.4f}")
-
-    if training_summary["stopped_early"]:
-        print("Training stopped early due to stagnation")
-
-    # Export benchmark results
-    if model._benchmark:
-        from pathlib import Path
-
-        results_path = Path(model._checkpoint_manager.checkpoint_dir) / "benchmark_results.json"
-        model._benchmark.export_results(str(results_path))
-
-    return training_summary
-
-
-def train_vision_model(
-    model: "VisionModel",
-    k: int = 10,
-    i: int = 5,
-    experts: Optional[list["VisionExpert"]] = None,
-    initial_samples: Optional[list] = None,
-    benchmark: Optional["Benchmark"] = None,
-    early_stopping: bool = True,
-    checkpoint_every: int = 1,
-    resume_from_checkpoint: bool = False,
-) -> dict:
-    """
-    Train a VisionModel using the self-tuning loop.
-
-    Args:
-        model: The VisionModel to train
-        k: Number of samples per iteration
-        i: Number of iterations
-        experts: Optional list of VisionExpert instances (uses each expert's production_rate)
-        initial_samples: Optional initial vision samples
-        benchmark: Optional evaluation benchmark
-        early_stopping: Stop if no improvement
-        checkpoint_every: Save checkpoint every N iterations
-        resume_from_checkpoint: Resume from latest checkpoint
-
-    Returns:
-        Training summary dictionary
-    """
-    from autotrain.components import ExpertWeight
-    from autotrain.components.vision_producer import VisionProducer
-    from autotrain.data_types import VisionSample
-    from autotrain.expert import VisionExpert
-
-    if k is not None and k <= 0:
-        raise ValueError("k must be positive")
-
-    if i is not None and i <= 0:
-        raise ValueError("i must be positive")
-
-    if k is None:
-        k = len(initial_samples) if initial_samples else 10
-    if i is None:
-        i = 5
-
-    print(f"Starting vision model training: k={k}, iterations={i}")
-
-    if initial_samples:
-        for sample in initial_samples:
-            if isinstance(sample, VisionSample):
-                model.add_sample(sample)
-
-    expert_weights = []
-    if experts:
-        for expert in experts:
-            if isinstance(expert, VisionExpert):
-                expert_weights.append(ExpertWeight(expert=expert, weight=expert.production_rate))
-
-    vision_producer = VisionProducer(
-        model=model,
-        prompt=model.prompts.producer,
-        inference_config=model.inference_config,
-    )
-
-    best_accuracy = 0.0
-    stopped_early = False
-    stagnation_count = 0
-    max_stagnation = 3
-
-    sample_multiplier = model.sample_multiplier
-
-    for iteration in range(i):
-        model._current_iteration = iteration + 1
-        print(f"\n=== Iteration {iteration + 1}/{i} ===")
-
-        if resume_from_checkpoint and model._checkpoint_manager.has_checkpoint():
-            print(f"Resuming from checkpoint...")
-            continue
-
-        samples_to_generate = k * sample_multiplier
-        input_samples = vision_producer.generate(count=samples_to_generate)
-        print(f"Generated {len(input_samples)} input samples")
-
-        for sample in input_samples:
-            model.add_sample(sample)
-
-        _fine_tune_vision(model, iteration)
-
-        if benchmark:
-            accuracy = benchmark.evaluate(model)
-            print(f"Benchmark accuracy: {accuracy:.4f}")
-
-            model._benchmark_history.append(
-                {
-                    "iteration": iteration + 1,
-                    "accuracy": accuracy,
-                }
-            )
-
-            if accuracy > best_accuracy:
-                best_accuracy = accuracy
-                stagnation_count = 0
-                model._checkpoint_manager.save_checkpoint(model, accuracy, iteration + 1)
-                print(f"New best accuracy! Saved checkpoint.")
-            else:
-                stagnation_count += 1
-                print(f"No improvement for {stagnation_count} iteration(s)")
-
-                if early_stopping and stagnation_count >= max_stagnation:
-                    print("Early stopping triggered")
-                    stopped_early = True
+                    model.save_checkpoint(iteration, metadata={"is_best": True, "accuracy": curr_acc})
+                
+                if early_stopping and model.get_benchmark().has_stagnated(threshold=early_stopping_threshold, iterations=early_stopping_patience): # type: ignore
+                    summary["stopped_early"] = True
                     break
 
-        elif checkpoint_every and (iteration + 1) % checkpoint_every == 0:
-            model._checkpoint_manager.save_checkpoint(model, 0.0, iteration + 1)
-            print(f"Checkpoint saved at iteration {iteration + 1}")
+        if checkpoint_every > 0 and (iteration + 1) % checkpoint_every == 0:
+            model.save_checkpoint(iteration, metadata={"accuracy": curr_acc})
 
-    training_summary = {
-        "iterations_completed": i if not stopped_early else iteration + 1,
-        "total_samples": len(model._training_data),
-        "best_accuracy": best_accuracy,
-        "stopped_early": stopped_early,
-    }
+        summary["iterations_completed"] = iteration + 1
+        summary["total_samples"] = len(model.get_samples())
 
-    print(f"\nTraining complete!")
-    print(f"Iterations: {training_summary['iterations_completed']}")
-    print(f"Total samples used: {training_summary['total_samples']}")
+    # Export benchmark results
+    if model.get_benchmark():
+        results_path = Path(model._checkpoint_manager.checkpoint_dir) / "benchmark_results.json"
+        model.get_benchmark().export_results(str(results_path))
 
-    if benchmark:
-        print(f"Best accuracy: {training_summary['best_accuracy']:.4f}")
-
-    if training_summary["stopped_early"]:
-        print("Training stopped early due to stagnation")
-
-    return training_summary
+    return summary
 
 
-def _fine_tune_vision(
-    model: "VisionModel", iteration: int, resume_from_checkpoint: bool = False
-) -> None:
-    """Fine-tune the vision model on accumulated training data."""
-    from autotrain.utils.function_evaluator import (
-        evaluate_epochs,
-        evaluate_learning_rate,
-        evaluate_lora_alpha,
-        evaluate_lora_dropout,
-    )
-
-    iteration = max(0, iteration)
-    epochs = evaluate_epochs(
-        model._training_config.epochs_fn or model._training_config.epochs, iteration
-    )
-    learning_rate = evaluate_learning_rate(
-        model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration
-    )
-    lora_alpha = evaluate_lora_alpha(
-        model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration
-    )
-    lora_dropout = evaluate_lora_dropout(
-        model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration
-    )
-
-    if not model._training_data:
-        return
-
-    try:
-        from datasets import Dataset
-        from transformers import TrainingArguments
-
-        from unsloth import FastVisionModel
-
-        train_dataset = Dataset.from_list(model._training_data)
-
-        def format_example(example):
-            if "messages" in example:
-                from autotrain.templates import apply_chat_template
-
-                return {
-                    "text": apply_chat_template(
-                        messages=example["messages"],
-                        template=model._template,
-                    )
-                }
-
-            if hasattr(model, "_template") and model._template:
-                messages = example.get("messages", [])
-                if not messages and "input_data" in example:
-                    messages = [
-                        {
-                            "role": "user",
-                            "content": [{"type": "text", "text": example["input_data"]}],
-                        },
-                        {
-                            "role": "assistant",
-                            "content": [{"type": "text", "text": example["output_data"]}],
-                        },
-                    ]
-                text = model._template.format_training_sample(
-                    instruction=example.get("input_data", ""),
-                    output=example.get("output_data", ""),
-                )
-            else:
-                text = f"### Instruction:\n{example.get('input_data', '')}\n\n### Response:\n{example.get('output_data', '')}"
-            return {"text": text}
-
-        train_dataset = train_dataset.map(format_example)
-
-        use_gc = model._scalable_config.gradient_checkpointing
-        model._fast_model = FastVisionModel.get_peft_model(
-            model=model._fast_model,
-            r=model._peft_config.r,
-            target_modules=model._peft_config.get_target_modules(),
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            bias=model._peft_config.bias,
-            use_gradient_checkpointing=use_gc if use_gc else "unsloth",
-        )
-
-        output_dir = model._checkpoint_manager.checkpoint_dir
-        training_args = TrainingArguments(
-            output_dir=output_dir,
-            per_device_train_batch_size=model._training_config.batch_size,
-            gradient_accumulation_steps=model._training_config.gradient_accumulation_steps,
-            learning_rate=learning_rate,
-            num_train_epochs=epochs,
-            max_steps=model._training_config.max_steps,
-            warmup_ratio=model._training_config.warmup_ratio,
-            logging_steps=model._training_config.logging_steps,
-            save_steps=model._training_config.save_steps,
-            save_total_limit=model._training_config.save_total_limit,
-            fp16=model._scalable_config.mixed_precision == "fp16",
-            bf16=model._scalable_config.mixed_precision == "bf16",
-            gradient_checkpointing=use_gc,
-            report_to=[],
-            seed=42,
-            lr_scheduler_type=model._training_config.scheduler_type,
-        )
-
-        from trl import SFTTrainer
-
-        trainer = SFTTrainer(
-            model=model._fast_model,
-            args=training_args,
-            train_dataset=train_dataset,
-            tokenizer=model._tokenizer,
-            dataset_text_field="text",
-        )
-
-        print(f"Fine-tuning with {len(train_dataset)} samples...")
-        trainer.train()
-
-        model._is_trained = True
-        print("Fine-tuning complete")
-
-    except ImportError as e:
-        print(f"Warning: Missing dependency for training: {e}")
-        print("Training data accumulated but fine-tuning skipped")
+def train_vision_model(model: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Compatibility wrapper for vision training."""
+    return train(model, **kwargs)
 
 
 __all__ = ["train", "_init_components", "_fine_tune", "train_vision_model", "_fine_tune_vision"]

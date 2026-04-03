@@ -18,19 +18,7 @@ def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
 
 @dataclass
 class InferenceConfig:
-    """Configuration for inference properties.
-
-    Args:
-        temperature: Static temperature value (0.0-2.0)
-        temperature_fn: Dynamic temperature as callable - takes iteration (int) and
-            returns temperature (float). If set, takes precedence over temperature.
-        max_tokens: Maximum tokens to generate
-        top_p: Nucleus sampling threshold
-        frequency_penalty: Frequency penalty for generation
-        presence_penalty: Presence penalty for generation
-        thinking: Enable thinking mode
-    """
-
+    """Configuration for inference properties."""
     temperature: float = 0.7
     temperature_fn: Optional[Callable[[int], float]] = None
     max_tokens: int = 1024
@@ -38,117 +26,40 @@ class InferenceConfig:
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
     thinking: bool = True
+    max_workers: int = 8
 
 
 @dataclass
 class Prompts:
-    """Configurable prompts for each component.
-
-    For Producer and Solver, use the baking functions by calling get_producer() or get_solver().
-    For Splitter and Checker, use get_splitter() or get_checker().
-
-    If custom prompts are set, they will be used directly. Otherwise, the default detailed
-    prompts from the prompts module will be used.
-
-    Each prompt can be either a single string or a list of strings. If a list is provided,
-    a random prompt will be selected each time get_* is called.
-
-    Example:
-        # Use default baked prompts
-        prompts = Prompts()
-        producer_prompt = prompts.get_producer("Python programming")
-
-        # Use custom prompts
-        custom_prompts = Prompts(
-            producer="Custom producer prompt",
-            solver="Custom solver prompt",
-        )
-
-        # Use multiple prompts (randomly selected)
-        multi_prompts = Prompts(
-            producer=["Generate a Python question", "Create a coding challenge"],
-            solver=["Solve this problem", "Answer the following"],
-        )
-    """
-
+    """Configurable prompts for each component."""
     producer: Optional[Union[str, list[str]]] = None
     solver: Optional[Union[str, list[str]]] = None
     splitter: Optional[Union[str, list[str]]] = None
     checker: Optional[Union[str, list[str]]] = None
 
     def get_producer(self, topic: str, format: str = "json") -> str:
-        """Get the producer prompt, using bake_producer if no custom prompt is set.
-
-        Args:
-            topic: The topic to generate training samples for.
-            format: The desired output format (json, text, etc.).
-
-        Returns:
-            The producer prompt string.
-        """
         from .prompts import bake_producer
-
         return _get_prompt(self.producer) if self.producer else bake_producer(topic, format)
 
     def get_solver(self, topic: Optional[str] = None, context: str = "") -> str:
-        """Get the solver prompt, using bake_solver if no custom prompt is set.
-
-        Args:
-            topic: Optional topic context for the solver.
-            context: Additional context or instructions.
-
-        Returns:
-            The solver prompt string.
-        """
         from .prompts import bake_solver
-
         return _get_prompt(self.solver) if self.solver else bake_solver(topic, context)
 
     def get_splitter(self) -> str:
-        """Get the splitter prompt using the default constant if no custom prompt is set.
-
-        Returns:
-            The splitter prompt string.
-        """
         from .prompts import SPLITTER_DEFAULT
-
         return _get_prompt(self.splitter) if self.splitter else SPLITTER_DEFAULT
 
     def get_checker(self) -> str:
-        """Get the checker prompt using the default constant if no custom prompt is set.
-
-        Returns:
-            The checker prompt string.
-        """
         from .prompts import CHECKER_DEFAULT
-
         return _get_prompt(self.checker) if self.checker else CHECKER_DEFAULT
 
 
 @dataclass
 class PEFTConfig:
-    """Configuration for PEFT/LoRA fine-tuning.
-
-    Default values follow Unsloth's recommended settings.
-    See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
-
-    Args:
-        r: LoRA rank
-        lora_alpha: Static LoRA alpha scaling parameter
-        lora_alpha_fn: Dynamic LoRA alpha as callable - takes iteration (int) and
-            returns alpha (int). If set, takes precedence over lora_alpha.
-        lora_dropout: Static LoRA dropout
-        lora_dropout_fn: Dynamic LoRA dropout as callable - takes iteration (int) and
-            returns dropout (float). If set, takes precedence over lora_dropout.
-        bias: Bias type
-        use_gradient_checkpointing: Gradient checkpointing setting
-        target_modules: Custom target modules
-        use_rslora: Use RSLoRA
-        loftq_config: LoftQ configuration
-    """
-
-    r: int = 64
-    lora_alpha: int = 128
+    """Configuration for PEFT/LoRA fine-tuning."""
+    r: int = 16
+    lora_rank_fn: Optional[Callable[[int], int]] = None
+    lora_alpha: int = 32
     lora_alpha_fn: Optional[Callable[[int], int]] = None
     lora_dropout: float = 0.0
     lora_dropout_fn: Optional[Callable[[int], float]] = None
@@ -159,50 +70,23 @@ class PEFTConfig:
     loftq_config: Optional[dict] = None
 
     def get_target_modules(self, model_type: str = "llama") -> list[str]:
-        """Get target modules based on model type."""
         if self.target_modules:
             return self.target_modules
-
         return ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 
 @dataclass
 class TrainingConfig:
-    """Configuration for training hyperparameters.
-
-    Default values follow Unsloth's recommended settings.
-    See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
-
-    Args:
-        epochs: Static number of epochs per training iteration
-        epochs_fn: Dynamic epochs as callable - takes iteration (int) and returns
-            epoch count (int). If set, takes precedence over epochs.
-        batch_size: Training batch size
-        gradient_accumulation_steps: Gradient accumulation steps
-        learning_rate: Static learning rate
-        learning_rate_fn: Dynamic learning rate as callable - takes iteration (int) and
-            returns learning rate (float). If set, takes precedence over learning_rate.
-        weight_decay: Weight decay
-        warmup_ratio: Warmup ratio
-        warmup_steps: Warmup steps
-        max_grad_norm: Max gradient norm
-        logging_steps: Logging steps
-        save_strategy: Save strategy
-        save_steps: Save steps
-        eval_strategy: Evaluation strategy
-        eval_steps: Evaluation steps
-        save_total_limit: Total save limit
-        seed: Random seed
-        scheduler_type: Scheduler type
-    """
-
-    epochs: int = 2
+    """Configuration for training hyperparameters."""
+    epochs: int = 3
     epochs_fn: Optional[Callable[[int], int]] = None
-    batch_size: int = 4
-    gradient_accumulation_steps: int = 16
-    learning_rate: float = 1e-5
+    batch_size: int = 2
+    batch_size_fn: Optional[Callable[[int], int]] = None
+    gradient_accumulation_steps: int = 8
+    learning_rate: float = 2e-4
     learning_rate_fn: Optional[Callable[[int], float]] = None
     weight_decay: float = 0.01
+    weight_decay_fn: Optional[Callable[[int], float]] = None
     warmup_ratio: float = 0.15
     warmup_steps: int = 0
     max_grad_norm: float = 1.0
@@ -214,29 +98,12 @@ class TrainingConfig:
     save_total_limit: int = 3
     seed: int = 3407
     scheduler_type: str = "cosine"
+    keep_last_n_iters: Optional[int] = None
 
 
 @dataclass
 class ScalableTrainingConfig:
-    """
-    Configuration for scalable training features.
-
-    Provides memory-efficient training options for larger models.
-
-    Default values follow Unsloth's recommended settings.
-    See: https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
-
-    Args:
-        gradient_checkpointing: Enable gradient checkpointing to save memory ("unsloth", True, or False)
-        mixed_precision: Mixed precision mode ("fp16", "bf16", "fp32"). bf16 recommended for modern GPUs.
-        batch_size_auto_tune: Automatically find optimal batch size
-        max_memory_mb: Maximum GPU memory to use (MB) for auto-tuning
-        num_workers: Number of DataLoader workers for parallel loading
-        dataloader_num_workers: Alias for num_workers
-        pin_memory: Pin memory for faster CPU->GPU transfer
-        use_flash_attention: Enable flash attention if available
-    """
-
+    """Configuration for scalable training features."""
     gradient_checkpointing: str = "unsloth"
     mixed_precision: str = "bf16"
     batch_size_auto_tune: bool = False
@@ -247,49 +114,24 @@ class ScalableTrainingConfig:
     use_flash_attention: bool = False
 
     def __post_init__(self):
-        """Validate configuration."""
         if self.mixed_precision not in ["fp16", "bf16", "fp32"]:
-            raise ValueError(
-                f"mixed_precision must be 'fp16', 'bf16', or 'fp32', got '{self.mixed_precision}'"
-            )
+            raise ValueError(f"mixed_precision must be 'fp16', 'bf16', or 'fp32', got '{self.mixed_precision}'")
         if self.num_workers < 0:
             raise ValueError("num_workers must be non-negative")
-        if self.max_memory_mb is not None and self.max_memory_mb <= 0:
-            raise ValueError("max_memory_mb must be positive")
         if self.gradient_checkpointing not in [True, False, "unsloth"]:
-            raise ValueError(
-                f"gradient_checkpointing must be True, False, or 'unsloth', "
-                f"got '{self.gradient_checkpointing}'"
-            )
-
-        # Sync dataloader_num_workers with num_workers if not explicitly set
+            raise ValueError(f"gradient_checkpointing must be True, False, or 'unsloth', got '{self.gradient_checkpointing}'")
         if self.dataloader_num_workers == 4 and self.num_workers != 4:
             self.dataloader_num_workers = self.num_workers
 
 
 class DatasetType:
-    """Dataset type constants for training."""
-
     INSTRUCTION = "instruction"
     CPT = "cpt"
-    # DISABLED: DPO = "dpo"
     GRPO = "grpo"
 
 
 @dataclass
 class CPTConfig:
-    """Configuration for Continued Pre-Training (CPT).
-
-    CPT is used to continue pre-training on domain-specific data
-    without instruction/output formatting.
-
-    Args:
-        dataset_type: Type of dataset - "instruction" or "cpt"
-        text_key: Key for text field in JSON/JSONL files (for CPT)
-        chat_template: Chat template to use for formatting
-        mapping: Role mapping for chat templates
-    """
-
     dataset_type: str = DatasetType.INSTRUCTION
     text_key: str = "text"
     chat_template: str = "alpaca"

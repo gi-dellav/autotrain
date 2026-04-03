@@ -123,7 +123,7 @@ class Solver:
 
     def solve(self, samples: list["Sample"]) -> list["Sample"]:
         """
-        Solve input samples to produce outputs.
+        Solve input samples to produce outputs in parallel.
 
         Args:
             samples: List of input samples to solve
@@ -131,10 +131,11 @@ class Solver:
         Returns:
             List of samples with filled outputs
         """
-        solved_samples = []
+        from concurrent.futures import ThreadPoolExecutor
+
         iteration = getattr(self.model, "_current_iteration", 0)
 
-        for sample in samples:
+        def _solve_sample(sample):
             expert, is_expert = self._select_source()
 
             if is_expert and expert is not None:
@@ -147,7 +148,14 @@ class Solver:
                 sample.metadata["solver"] = "model"
 
             sample.output_data = output
-            solved_samples.append(sample)
+            return sample
+
+        max_workers = self.model.inference_config.max_workers
+        if not isinstance(max_workers, int):
+            max_workers = 8
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            solved_samples = list(executor.map(_solve_sample, samples))
 
         return solved_samples
 

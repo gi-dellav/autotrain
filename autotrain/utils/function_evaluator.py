@@ -54,6 +54,34 @@ def validate_dpo_beta(value: float) -> None:
         raise ValueError(f"DPO beta must be positive, got {value}")
 
 
+def validate_weight_decay(value: float) -> None:
+    """Validate that a weight decay value is non-negative."""
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"Weight decay must be a number, got {type(value).__name__}")
+    if value < 0:
+        raise ValueError(f"Weight decay must be non-negative, got {value}")
+
+
+def validate_batch_size(value: int) -> None:
+    """Validate that a batch size value is a positive integer."""
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"Batch size must be a number, got {type(value).__name__}")
+    if value <= 0:
+        raise ValueError(f"Batch size must be positive, got {value}")
+    if math.floor(value) != value:
+        raise ValueError(f"Batch size must be an integer, got {value}")
+
+
+def validate_lora_rank(value: int) -> None:
+    """Validate that a LoRA rank value is a positive integer."""
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"LoRA rank must be a number, got {type(value).__name__}")
+    if value <= 0:
+        raise ValueError(f"LoRA rank must be positive, got {value}")
+    if math.floor(value) != value:
+        raise ValueError(f"LoRA rank must be an integer, got {value}")
+
+
 def evaluate_temperature(
     temperature: Optional[Union[float, Callable[[int], float]]],
     iteration: int,
@@ -144,6 +172,51 @@ def evaluate_dpo_beta(
     return value
 
 
+def evaluate_weight_decay(
+    weight_decay: Optional[Union[float, Callable[[int], float]]],
+    iteration: int,
+) -> float:
+    """Evaluate weight decay for the given iteration."""
+    if weight_decay is None:
+        return 0.01
+    if callable(weight_decay):
+        value = weight_decay(iteration)
+    else:
+        value = float(weight_decay)
+    validate_weight_decay(value)
+    return value
+
+
+def evaluate_batch_size(
+    batch_size: Optional[Union[int, Callable[[int], int]]],
+    iteration: int,
+) -> int:
+    """Evaluate batch size for the given iteration."""
+    if batch_size is None:
+        return 2
+    if callable(batch_size):
+        value = batch_size(iteration)
+    else:
+        value = int(batch_size)
+    validate_batch_size(value)
+    return int(value)
+
+
+def evaluate_lora_rank(
+    lora_rank: Optional[Union[int, Callable[[int], int]]],
+    iteration: int,
+) -> int:
+    """Evaluate LoRA rank for the given iteration."""
+    if lora_rank is None:
+        return 16
+    if callable(lora_rank):
+        value = lora_rank(iteration)
+    else:
+        value = int(lora_rank)
+    validate_lora_rank(value)
+    return int(value)
+
+
 __all__ = [
     "validate_temperature",
     "validate_epochs",
@@ -151,10 +224,16 @@ __all__ = [
     "validate_lora_alpha",
     "validate_lora_dropout",
     "validate_dpo_beta",
+    "validate_weight_decay",
+    "validate_batch_size",
+    "validate_lora_rank",
     "evaluate_temperature",
     "evaluate_epochs",
     "evaluate_learning_rate",
     "evaluate_lora_alpha",
     "evaluate_lora_dropout",
     "evaluate_dpo_beta",
+    "evaluate_weight_decay",
+    "evaluate_batch_size",
+    "evaluate_lora_rank",
 ]

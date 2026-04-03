@@ -10,7 +10,7 @@ from autotrain.config import InferenceConfig
 
 if TYPE_CHECKING:
     from autotrain.benchmark import Benchmark
-    from autotrain.core.model import Model
+    from autotrain.core.base_model import BaseModel
     from autotrain.expert import Expert
 
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 def add_expert(
-    model: "Model",
+    model: "BaseModel",
     expert: "Expert",
     production_weight: float = 1.0,
     check_weight: float = 0.0,
@@ -34,7 +34,7 @@ def add_expert(
         model._checker.add_expert(expert)
 
 
-def remove_expert(model: "Model", expert: "Expert") -> None:
+def remove_expert(model: "BaseModel", expert: "Expert") -> None:
     """Remove an expert from all components."""
     if model._solver:
         model._solver.remove_expert(expert)
@@ -54,7 +54,7 @@ def clear_experts(model: "Model") -> None:
         model._checker.experts.clear()
 
 
-def set_expert_weights(model: "Model", weights: dict["Expert", float]) -> None:
+def set_expert_weights(model: "BaseModel", weights: dict["Expert", float]) -> None:
     """Set production weights for multiple experts."""
     if model._solver:
         model._solver.clear_experts()
@@ -63,7 +63,7 @@ def set_expert_weights(model: "Model", weights: dict["Expert", float]) -> None:
 
 
 def add_experts(
-    model: "Model",
+    model: "BaseModel",
     experts: list[tuple["Expert", float]],
     check_weight: float = 0.0,
 ) -> None:
@@ -82,7 +82,7 @@ def add_experts(
 
 
 def set_benchmark(
-    model: "Model",
+    model: "BaseModel",
     benchmark: Optional["Benchmark"] = None,
     name: str = "default",
     expert_model_name: Optional[str] = None,
@@ -106,7 +106,7 @@ def get_benchmark(model: "Model") -> Optional["Benchmark"]:
 
 
 def add_benchmark_sample(
-    model: "Model",
+    model: "BaseModel",
     input_data: str,
     expected_output: str,
     mode: str = "exact_match",
@@ -121,7 +121,7 @@ def add_benchmark_sample(
     model._benchmark.add_sample(input_data, expected_output, evaluation_mode=eval_mode)
 
 
-def load_benchmark(model: "Model", path: str, format: str = "json") -> "Benchmark":
+def load_benchmark(model: "BaseModel", path: str, format: str = "json") -> "Benchmark":
     """Load a benchmark from file."""
     model._benchmark = Benchmark.load(path, format=format)
     return model._benchmark
@@ -131,7 +131,7 @@ def load_benchmark(model: "Model", path: str, format: str = "json") -> "Benchmar
 
 
 def save_checkpoint(
-    model: "Model",
+    model: "BaseModel",
     iteration: Optional[int] = None,
     metadata: Optional[dict] = None,
 ) -> None:
@@ -152,7 +152,7 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    model: "Model",
+    model: "BaseModel",
     checkpoint_id: Optional[str] = None,
     iteration: Optional[int] = None,
 ) -> None:
@@ -174,7 +174,7 @@ def list_checkpoints(model: "Model") -> list:
 
 
 def _call_model(
-    model: "Model", prompt: str, inference_config: Optional[InferenceConfig] = None
+    model: "BaseModel", prompt: str, inference_config: Optional[InferenceConfig] = None
 ) -> str:
     """Generate output from the model."""
     if not model._is_model_loaded:
@@ -207,7 +207,7 @@ def _call_model(
 
 
 def generate(
-    model: "Model",
+    model: "BaseModel",
     prompt: str,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
@@ -223,7 +223,7 @@ def generate(
 
 
 def _call_model_with_tools(
-    model: "Model",
+    model: "BaseModel",
     messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[str] = None,
@@ -344,7 +344,7 @@ def _parse_tool_calls(response_text: str) -> List[Dict[str, Any]]:
 
 
 def generate_with_tools(
-    model: "Model",
+    model: "BaseModel",
     prompt: str,
     tools: Optional[List[Dict[str, Any]]] = None,
     temperature: Optional[float] = None,
@@ -479,7 +479,7 @@ def generate_with_tools(
 
 
 def export_gguf(
-    model: "Model",
+    model: "BaseModel",
     output_path: str,
     quantization: str = "q4_k_m",
     merge_adapter: bool = True,
@@ -521,7 +521,7 @@ def export_gguf(
 
 
 def push_to_huggingface(
-    model: "Model",
+    model: "BaseModel",
     repo_id: str,
     token: Optional[str] = None,
     private: bool = False,
@@ -576,7 +576,7 @@ def push_to_huggingface(
 
 
 def export_to_ollama(
-    model: "Model",
+    model: "BaseModel",
     name: str,
     gguf_path: Optional[str] = None,
     template: Optional[str] = None,
