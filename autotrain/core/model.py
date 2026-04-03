@@ -51,6 +51,7 @@ class Model(BaseModel):
     def _init_template(self) -> None:
         """Initialize template based on model name."""
         from autotrain.templates import auto_detect_template
+
         self._template = auto_detect_template(self.model_name)
         print(f"Using template: {self._template.name} (auto-detected from {self.model_name})")
 
@@ -109,6 +110,7 @@ class Model(BaseModel):
     def _unload_model(self) -> None:
         """Unload the model from memory to free resources."""
         import gc
+
         if self._fast_model is not None:
             del self._fast_model
             self._fast_model = None
@@ -123,6 +125,7 @@ class Model(BaseModel):
         gc.collect()
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except ImportError:
@@ -180,9 +183,18 @@ class Model(BaseModel):
         return int(base_memory + (batch_size * per_sample_memory))
 
     # Delegated methods
-    def add_expert(self, expert: "Expert", weight: float = 1.0, production_weight: Optional[float] = None, check_weight: float = 0.0) -> None:
+    def add_expert(
+        self,
+        expert: "Expert",
+        weight: float = 1.0,
+        production_weight: Optional[float] = None,
+        check_weight: float = 0.0,
+    ) -> None:
         from autotrain.core.management import add_expert
-        add_expert(self, expert, production_weight=production_weight or weight, check_weight=check_weight)
+
+        add_expert(
+            self, expert, production_weight=production_weight or weight, check_weight=check_weight
+        )
 
     def generate(
         self,
@@ -207,18 +219,35 @@ class Model(BaseModel):
 
     def train(self, **kwargs: Any) -> Any:
         from autotrain.core.training import train
+
         return train(self, **kwargs)
 
-    def export_gguf(self, output_path: Union[str, Path], quantization: str = "q4_k_m", merge_adapter: bool = True) -> str:
+    def export_gguf(
+        self,
+        output_path: Union[str, Path],
+        quantization: str = "q4_k_m",
+        merge_adapter: bool = True,
+    ) -> str:
         from autotrain.core.management import export_gguf
+
         return export_gguf(self, str(output_path), quantization, merge_adapter)
 
-    def push_to_huggingface(self, repo_id: str, token: Optional[str] = None, private: bool = False, merge_adapter: bool = True) -> None:
+    def push_to_huggingface(
+        self,
+        repo_id: str,
+        token: Optional[str] = None,
+        private: bool = False,
+        merge_adapter: bool = True,
+    ) -> None:
         from autotrain.core.management import push_to_huggingface
+
         push_to_huggingface(self, repo_id, token, private, merge_adapter)
 
-    def export_to_ollama(self, output_path: Union[str, Path], model_name: str, quantization: str = "q4_k_m") -> None:
+    def export_to_ollama(
+        self, output_path: Union[str, Path], model_name: str, quantization: str = "q4_k_m"
+    ) -> None:
         from autotrain.core.management import export_to_ollama
+
         export_to_ollama(self, str(output_path), model_name, quantization)
 
 

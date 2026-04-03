@@ -19,6 +19,7 @@ def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
 @dataclass
 class InferenceConfig:
     """Configuration for inference properties."""
+
     temperature: float = 0.7
     temperature_fn: Optional[Callable[[int], float]] = None
     max_tokens: int = 1024
@@ -32,6 +33,7 @@ class InferenceConfig:
 @dataclass
 class Prompts:
     """Configurable prompts for each component."""
+
     producer: Optional[Union[str, list[str]]] = None
     solver: Optional[Union[str, list[str]]] = None
     splitter: Optional[Union[str, list[str]]] = None
@@ -39,24 +41,29 @@ class Prompts:
 
     def get_producer(self, topic: str, format: str = "json") -> str:
         from .prompts import bake_producer
+
         return _get_prompt(self.producer) if self.producer else bake_producer(topic, format)
 
     def get_solver(self, topic: Optional[str] = None, context: str = "") -> str:
         from .prompts import bake_solver
+
         return _get_prompt(self.solver) if self.solver else bake_solver(topic, context)
 
     def get_splitter(self) -> str:
         from .prompts import SPLITTER_DEFAULT
+
         return _get_prompt(self.splitter) if self.splitter else SPLITTER_DEFAULT
 
     def get_checker(self) -> str:
         from .prompts import CHECKER_DEFAULT
+
         return _get_prompt(self.checker) if self.checker else CHECKER_DEFAULT
 
 
 @dataclass
 class PEFTConfig:
     """Configuration for PEFT/LoRA fine-tuning."""
+
     r: int = 16
     lora_rank_fn: Optional[Callable[[int], int]] = None
     lora_alpha: int = 32
@@ -78,6 +85,7 @@ class PEFTConfig:
 @dataclass
 class TrainingConfig:
     """Configuration for training hyperparameters."""
+
     epochs: int = 3
     epochs_fn: Optional[Callable[[int], int]] = None
     batch_size: int = 2
@@ -104,6 +112,7 @@ class TrainingConfig:
 @dataclass
 class ScalableTrainingConfig:
     """Configuration for scalable training features."""
+
     gradient_checkpointing: str = "unsloth"
     mixed_precision: str = "bf16"
     batch_size_auto_tune: bool = False
@@ -115,11 +124,15 @@ class ScalableTrainingConfig:
 
     def __post_init__(self):
         if self.mixed_precision not in ["fp16", "bf16", "fp32"]:
-            raise ValueError(f"mixed_precision must be 'fp16', 'bf16', or 'fp32', got '{self.mixed_precision}'")
+            raise ValueError(
+                f"mixed_precision must be 'fp16', 'bf16', or 'fp32', got '{self.mixed_precision}'"
+            )
         if self.num_workers < 0:
             raise ValueError("num_workers must be non-negative")
         if self.gradient_checkpointing not in [True, False, "unsloth"]:
-            raise ValueError(f"gradient_checkpointing must be True, False, or 'unsloth', got '{self.gradient_checkpointing}'")
+            raise ValueError(
+                f"gradient_checkpointing must be True, False, or 'unsloth', got '{self.gradient_checkpointing}'"
+            )
         if self.dataloader_num_workers == 4 and self.num_workers != 4:
             self.dataloader_num_workers = self.num_workers
 

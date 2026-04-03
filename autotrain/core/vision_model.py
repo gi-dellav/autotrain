@@ -77,6 +77,7 @@ class VisionModel(BaseModel):
     def _unload_model(self) -> None:
         """Unload the model from memory to free resources."""
         import gc
+
         if self._fast_model is not None:
             del self._fast_model
             self._fast_model = None
@@ -94,6 +95,7 @@ class VisionModel(BaseModel):
         gc.collect()
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except ImportError:
@@ -104,13 +106,15 @@ class VisionModel(BaseModel):
         """Add a training sample."""
         if isinstance(sample, VisionSample):
             self._samples.append(sample)
-            self._training_data.append({
-                "input_data": sample.input_data,
-                "output_data": sample.output_data,
-                "images": sample.images,
-                "messages": sample.to_conversation(),
-                "metadata": sample.metadata,
-            })
+            self._training_data.append(
+                {
+                    "input_data": sample.input_data,
+                    "output_data": sample.output_data,
+                    "images": sample.images,
+                    "messages": sample.to_conversation(),
+                    "metadata": sample.metadata,
+                }
+            )
         else:
             vision_sample = VisionSample(
                 input_data=sample.input_data,
@@ -118,12 +122,14 @@ class VisionModel(BaseModel):
                 metadata=sample.metadata,
             )
             self._samples.append(vision_sample)
-            self._training_data.append({
-                "input_data": sample.input_data,
-                "output_data": sample.output_data,
-                "messages": vision_sample.to_conversation(),
-                "metadata": sample.metadata,
-            })
+            self._training_data.append(
+                {
+                    "input_data": sample.input_data,
+                    "output_data": sample.output_data,
+                    "messages": vision_sample.to_conversation(),
+                    "metadata": sample.metadata,
+                }
+            )
 
     def generate(
         self,
@@ -166,10 +172,12 @@ class VisionModel(BaseModel):
 
     def train(self, **kwargs):
         from autotrain.core.training import train_vision_model
+
         return train_vision_model(self, **kwargs)
 
     def import_dataset(self, path: Union[str, Path]) -> None:
         import json
+
         path = Path(path)
         data = json.loads(path.read_text())
         for item in data:

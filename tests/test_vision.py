@@ -527,6 +527,7 @@ class TestVisionModel:
         model.for_inference()
 
         model._fast_model.for_inference.assert_called_once()
+
     def test_vision_model_repr(self):
         """Test VisionModel __repr__."""
         from autotrain.core.vision_model import VisionModel

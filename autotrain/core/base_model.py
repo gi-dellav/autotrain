@@ -106,7 +106,8 @@ class BaseModel:
         return self._training_config
 
     def set_scalable_config(self, **kwargs) -> None:
-        if not kwargs: return
+        if not kwargs:
+            return
         for k, v in kwargs.items():
             if hasattr(self._scalable_config, k):
                 setattr(self._scalable_config, k, v)
@@ -114,21 +115,29 @@ class BaseModel:
     def get_scalable_config(self) -> ScalableTrainingConfig:
         return self._scalable_config
 
-    def add_expert(self, expert: Any, weight: float = 1.0, production_weight: Optional[float] = None, check_weight: float = 0.0) -> None:
+    def add_expert(
+        self,
+        expert: Any,
+        weight: float = 1.0,
+        production_weight: Optional[float] = None,
+        check_weight: float = 0.0,
+    ) -> None:
         p_weight = production_weight if production_weight is not None else weight
         self._experts.append((expert, p_weight))
         from autotrain.core.management import add_expert
-        add_expert(self, expert, production_weight=p_weight, check_weight=check_weight)
 
+        add_expert(self, expert, production_weight=p_weight, check_weight=check_weight)
 
     def remove_expert(self, expert: Any) -> None:
         self._experts = [e for e in self._experts if e[0] != expert]
         from autotrain.core.management import remove_expert
+
         remove_expert(self, expert)
 
     def clear_experts(self) -> None:
         self._experts = []
-        if self._solver: self._solver.clear_experts()
+        if self._solver:
+            self._solver.clear_experts()
 
     def get_experts(self) -> List[tuple]:
         return self._experts
@@ -139,21 +148,29 @@ class BaseModel:
     def get_benchmark(self) -> Optional["Benchmark"]:
         return self._benchmark
 
-    def save_checkpoint(self, iteration: int, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    def save_checkpoint(
+        self, iteration: int, metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
         from autotrain.core.management import save_checkpoint
+
         save_checkpoint(self, iteration, metadata)
         return f"checkpoint_{iteration}"
 
-    def load_checkpoint(self, checkpoint_id: Optional[str] = None, iteration: Optional[int] = None) -> Any:
+    def load_checkpoint(
+        self, checkpoint_id: Optional[str] = None, iteration: Optional[int] = None
+    ) -> Any:
         from autotrain.core.management import load_checkpoint
+
         return load_checkpoint(self, checkpoint_id, iteration)
 
     def list_checkpoints(self) -> List[Any]:
         from autotrain.core.management import list_checkpoints
+
         return list_checkpoints(self)
 
     def export_expert_data(self, path: Union[str, Path]) -> None:
         import json
+
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         if str(path).endswith(".jsonl"):
@@ -184,30 +201,32 @@ class BaseModel:
 
     def create_tool(self, name: Optional[str] = None, description: Optional[str] = None):
         from autotrain.tools import create_tool
-        
+
         orig_decorator = create_tool(name=name, description=description)
-        
+
         def model_decorator(func):
             tool = orig_decorator(func)
             self.add_tool(tool)
             return tool
-            
+
         return model_decorator
 
     def add_benchmark_sample(
         self, input_data: str, expected_output: str, mode: str = "exact_match"
     ) -> None:
         from autotrain.core.management import add_benchmark_sample
+
         add_benchmark_sample(self, input_data, expected_output, mode)
 
     def _init_components(self, experts: Optional[list] = None) -> None:
         from autotrain.core.training import _init_components
+
         _init_components(self, experts=experts)
 
     def add_sample(self, sample: Any) -> None:
         """Add a training sample."""
         self._samples.append(sample)
-        
+
         # Determine how to format for training data
         if hasattr(sample, "to_dict"):
             self._training_data.append(sample.to_dict())
@@ -216,21 +235,26 @@ class BaseModel:
         else:
             # Fallback for standard Sample/VisionSample
             from autotrain.data_types import Sample, VisionSample
+
             if isinstance(sample, VisionSample):
-                self._training_data.append({
-                    "input_data": sample.input_data,
-                    "output_data": sample.output_data,
-                    "images": sample.images,
-                    "messages": sample.to_conversation(),
-                    "metadata": sample.metadata,
-                })
+                self._training_data.append(
+                    {
+                        "input_data": sample.input_data,
+                        "output_data": sample.output_data,
+                        "images": sample.images,
+                        "messages": sample.to_conversation(),
+                        "metadata": sample.metadata,
+                    }
+                )
             elif isinstance(sample, Sample):
-                self._training_data.append({
-                    "input": sample.input_data,
-                    "output": sample.output_data,
-                    "messages": sample.to_conversation(),
-                    "metadata": sample.metadata,
-                })
+                self._training_data.append(
+                    {
+                        "input": sample.input_data,
+                        "output": sample.output_data,
+                        "messages": sample.to_conversation(),
+                        "metadata": sample.metadata,
+                    }
+                )
             else:
                 # Generic fallback
                 self._training_data.append({"data": str(sample)})
@@ -252,7 +276,10 @@ class BaseModel:
                 else:
                     # Fallback to class methods if available
                     import unsloth
-                    if hasattr(self, "processor") and getattr(self, "processor") is not None: # Vision
+
+                    if (
+                        hasattr(self, "processor") and getattr(self, "processor") is not None
+                    ):  # Vision
                         unsloth.FastVisionModel.for_inference(self._fast_model)
                         print("Model prepared for inference (Vision)")
                     else:
@@ -260,7 +287,6 @@ class BaseModel:
                         print("Model prepared for inference (Language)")
             except Exception as e:
                 print(f"Warning: Could not prepare for inference: {e}")
-
 
     # Abstract/Subclass methods
     def load_model(self, **kwargs):

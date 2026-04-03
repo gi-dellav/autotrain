@@ -505,9 +505,11 @@ def _convert_to_jinja(template: InstructionTemplate) -> str:
         "{% endif %}",
         "{% endfor %}",
         "{% if add_generation_prompt %}",
-        assistant_part.split("{{ message['content'] }}")[0]
-        if "{{ message['content'] }}" in assistant_part
-        else "",
+        (
+            assistant_part.split("{{ message['content'] }}")[0]
+            if "{{ message['content'] }}" in assistant_part
+            else ""
+        ),
         "{% endif %}",
     ]
 

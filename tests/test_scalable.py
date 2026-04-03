@@ -185,7 +185,7 @@ class TestScalableTrainingIntegration:
     def test_training_config_independent(self):
         """Test that training config and scalable config are independent."""
         from autotrain import TrainingConfig
-        
+
         model = Model()
 
         model.set_training_config(TrainingConfig(batch_size=8))

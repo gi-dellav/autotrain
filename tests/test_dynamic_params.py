@@ -150,7 +150,7 @@ class TestTrainingDataPruning:
         from autotrain.core.base_model import BaseModel
 
         model = BaseModel(model_name="test-model")
-        
+
         # Add samples with different iteration metadata
         model._training_data = [
             {"input": "sample_0", "output": "out_0", "iteration": 0},
@@ -160,10 +160,10 @@ class TestTrainingDataPruning:
         ]
 
         from autotrain.core.training import _prune_old_training_data
-        
+
         # Keep last 2 iterations, current iteration is 3
         _prune_old_training_data(model, current_iteration=3, keep_last_n_iters=2)
-        
+
         # Should keep samples from iterations 2 and 3
         assert len(model._training_data) == 2
         assert model._training_data[0]["iteration"] == 2
@@ -174,7 +174,7 @@ class TestTrainingDataPruning:
         from autotrain.core.base_model import BaseModel
 
         model = BaseModel(model_name="test-model")
-        
+
         model._training_data = [
             {"input": "initial_0", "output": "out_0", "iteration": -1},
             {"input": "initial_1", "output": "out_1", "iteration": -1},
@@ -183,10 +183,10 @@ class TestTrainingDataPruning:
         ]
 
         from autotrain.core.training import _prune_old_training_data
-        
+
         # Keep last 1 iteration, current iteration is 3
         _prune_old_training_data(model, current_iteration=3, keep_last_n_iters=1)
-        
+
         # Should keep initial samples and iteration 3 only
         assert len(model._training_data) == 2
         assert model._training_data[0]["iteration"] == -1
@@ -197,17 +197,17 @@ class TestTrainingDataPruning:
         from autotrain.core.base_model import BaseModel
 
         model = BaseModel(model_name="test-model")
-        
+
         model._training_data = [
             {"input": "sample_0", "output": "out_0", "iteration": 0},
             {"input": "sample_1", "output": "out_1", "iteration": 1},
         ]
 
         from autotrain.core.training import _prune_old_training_data
-        
+
         # Should not prune when keep_last_n_iters <= 0
         _prune_old_training_data(model, current_iteration=3, keep_last_n_iters=0)
-        
+
         assert len(model._training_data) == 2
 
 
@@ -218,13 +218,13 @@ class TestDynamicParametersInTraining:
     def test_training_uses_dynamic_weight_decay(self, mock_fine_tune, temp_dir):
         """Test that training uses weight_decay_fn when set."""
         from autotrain import Model
-        
+
         model = Model(checkpoint_dir=str(temp_dir), sample_multiplier=1)
         model._training_config.weight_decay_fn = lambda it: 0.01 + it * 0.005
-        
+
         # Mock the fine-tune to avoid actual training
         model._fine_tune = MagicMock()
-        
+
         # Verify config is set correctly
         assert model._training_config.weight_decay_fn is not None
         assert model._training_config.weight_decay_fn(0) == 0.01
@@ -234,12 +234,12 @@ class TestDynamicParametersInTraining:
     def test_training_uses_dynamic_batch_size(self, mock_fine_tune, temp_dir):
         """Test that training uses batch_size_fn when set."""
         from autotrain import Model
-        
+
         model = Model(checkpoint_dir=str(temp_dir), sample_multiplier=1)
         model._training_config.batch_size_fn = lambda it: min(2 + it, 8)
-        
+
         model._fine_tune = MagicMock()
-        
+
         assert model._training_config.batch_size_fn is not None
         assert model._training_config.batch_size_fn(0) == 2
         assert model._training_config.batch_size_fn(10) == 8
@@ -248,12 +248,12 @@ class TestDynamicParametersInTraining:
     def test_training_uses_dynamic_lora_rank(self, mock_fine_tune, temp_dir):
         """Test that training uses lora_rank_fn when set."""
         from autotrain import Model
-        
+
         model = Model(checkpoint_dir=str(temp_dir), sample_multiplier=1)
         model._peft_config.lora_rank_fn = lambda it: 16 + it * 8
-        
+
         model._fine_tune = MagicMock()
-        
+
         assert model._peft_config.lora_rank_fn is not None
         assert model._peft_config.lora_rank_fn(0) == 16
         assert model._peft_config.lora_rank_fn(2) == 32

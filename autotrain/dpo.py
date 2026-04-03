@@ -24,17 +24,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DPOConfig:
-    """
+    \"""
     Configuration for DPO training.
 
     Args:
         beta: Temperature parameter for DPO loss (default 0.1). Must be > 0.
-        loss_type: Type of DPO loss ("sigmoid", "hinge", "ipo", "kto_pair")
+        loss_type: Type of DPO loss (\"sigmoid\", \"hinge\", \"ipo\", \"kto_pair\")
         label_smoothing: Label smoothing factor (default 0.0). Must be in [0, 1).
         reference_free: If True, use model as its own reference
-        f_divergence_type: Type of f-divergence for alignment (default "reverse_kl")
+        f_divergence_type: Type of f-divergence for alignment (default \"reverse_kl\")
         reference_model_name: Optional reference model for DPO. If None, uses model itself.
-        truncation_mode: How to truncate sequences ("keep_start", "keep_end")
+        truncation_mode: How to truncate sequences (\"keep_start\", \"keep_end\")
         precompute_ref_log_probs: Precompute reference model log probs to save memory
         epochs: Number of training epochs. Must be > 0.
         batch_size: Per-device training batch size. Must be > 0.
@@ -44,7 +44,7 @@ class DPOConfig:
         max_prompt_length: Maximum prompt length. Must be > 0 and <= max_length.
         generate_during_eval: If True, generate completions during evaluation
         is_encoder_decoder: Whether training an encoder-decoder model
-    """
+    \"""
 
     beta: float = 0.1
     loss_type: str = "sigmoid"
@@ -66,7 +66,7 @@ class DPOConfig:
     is_encoder_decoder: bool = False
 
     def __post_init__(self):
-        """Validate configuration values."""
+        \"""Validate configuration values.\"""
         if self.beta <= 0:
             raise ValueError(f"beta must be > 0, got {self.beta}")
         if self.label_smoothing < 0 or self.label_smoothing >= 1:
@@ -101,11 +101,11 @@ class DPOConfig:
 
 @dataclass
 class PreferenceSample:
-    """
+    \"""
     A preference sample for DPO training.
 
     Contains a prompt with both a chosen (preferred) and rejected (less preferred) response.
-    """
+    \"""
 
     prompt: str
     chosen: str
@@ -113,7 +113,7 @@ class PreferenceSample:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        """Convert to dictionary."""
+        \"""Convert to dictionary.\"""
         return {
             "prompt": self.prompt,
             "chosen": self.chosen,
@@ -123,7 +123,7 @@ class PreferenceSample:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PreferenceSample":
-        """Create from dictionary."""
+        \"""Create from dictionary.\"""
         return cls(
             prompt=data["prompt"],
             chosen=data["chosen"],
@@ -133,7 +133,7 @@ class PreferenceSample:
 
 
 class DPOTrainer:
-    """
+    \"""
     Trainer for Direct Preference Optimization (DPO).
 
     DPO aligns models with human preferences by optimizing a simple loss
@@ -152,7 +152,7 @@ class DPOTrainer:
 
         # Train with DPO
         dpo_trainer.train()
-    """
+    \"""
 
     def __init__(
         self,
@@ -160,14 +160,14 @@ class DPOTrainer:
         dpo_config: Optional[DPOConfig] = None,
         inference_config: Optional[InferenceConfig] = None,
     ):
-        """
+        \"""
         Initialize DPO trainer.
 
         Args:
             model: The Model to train
             dpo_config: DPO configuration
             inference_config: Inference configuration
-        """
+        \"""
         self.model = model
         self.dpo_config = dpo_config or DPOConfig()
         self.inference_config = inference_config or InferenceConfig()
@@ -190,7 +190,7 @@ class DPOTrainer:
         rejected: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """
+        \"""
         Add a preference sample.
 
         Args:
@@ -198,7 +198,7 @@ class DPOTrainer:
             chosen: The preferred (chosen) response
             rejected: The less preferred (rejected) response
             metadata: Optional metadata
-        """
+        \"""
         sample = PreferenceSample(
             prompt=prompt,
             chosen=chosen,
@@ -212,13 +212,13 @@ class DPOTrainer:
         samples: List[Tuple[str, str, str]],
         metadata_list: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        """
+        \"""
         Add multiple preference samples.
 
         Args:
             samples: List of (prompt, chosen, rejected) tuples
             metadata_list: Optional list of metadata dicts
-        """
+        \"""
         if metadata_list is None:
             metadata_list = [{}] * len(samples)
 
@@ -231,7 +231,7 @@ class DPOTrainer:
         prompts: List[str],
         count_per_prompt: int = 2,
     ) -> None:
-        """
+        \"""
         Generate preference samples using an expert.
 
         The expert generates multiple responses per prompt, which are then
@@ -241,7 +241,7 @@ class DPOTrainer:
             expert: Expert model for generating responses
             prompts: List of prompts
             count_per_prompt: Number of responses to generate per prompt (default: 2)
-        """
+        \"""
         for prompt in prompts:
             responses = []
             for _ in range(count_per_prompt):
@@ -277,14 +277,14 @@ class DPOTrainer:
         responses: List[str],
         rankings: List[int],
     ) -> None:
-        """
+        \"""
         Create preference samples from ranked responses.
 
         Args:
             prompt: The input prompt
             responses: List of responses
             rankings: List of ranks (lower = better)
-        """
+        \"""
         if len(responses) != len(rankings):
             raise ValueError("responses and rankings must have same length")
 
@@ -301,13 +301,13 @@ class DPOTrainer:
                 )
 
     def export_dataset(self, path: Union[str, Path], format: str = "json") -> None:
-        """
+        \"""
         Export preference dataset to file.
 
         Args:
             path: Output file path
-            format: Export format ("json" or "jsonl")
-        """
+            format: Export format (\"json\" or \"jsonl\")
+        \"""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -324,13 +324,13 @@ class DPOTrainer:
         logger.info("DPO dataset exported to %s (%d samples)", path, len(data))
 
     def import_dataset(self, path: Union[str, Path], format: str = "json") -> None:
-        """
+        \"""
         Import preference dataset from file.
 
         Args:
             path: Input file path
-            format: Import format ("json" or "jsonl")
-        """
+            format: Import format (\"json\" or \"jsonl\")
+        \"""
         path = Path(path)
 
         if not path.exists():
@@ -355,7 +355,7 @@ class DPOTrainer:
         output_dir: Optional[str] = None,
         resume_from_checkpoint: bool = False,
     ) -> Dict[str, Any]:
-        """
+        \"""
         Train the model using DPO.
 
         Args:
@@ -365,7 +365,7 @@ class DPOTrainer:
 
         Returns:
             Training summary dictionary
-        """
+        \"""
         if not self._preference_samples:
             raise ValueError("No preference samples. Add samples before training.")
 
@@ -497,7 +497,7 @@ class DPOTrainer:
         self,
         samples: Optional[List[PreferenceSample]] = None,
     ):
-        """
+        \"""
         Prepare dataset for DPO training.
 
         Args:
@@ -505,7 +505,7 @@ class DPOTrainer:
 
         Returns:
             HuggingFace Dataset
-        """
+        \"""
         try:
             from datasets import Dataset
         except ImportError:
@@ -543,15 +543,15 @@ class DPOTrainer:
         return Dataset.from_list(data)
 
     def get_samples(self) -> List[PreferenceSample]:
-        """Get all preference samples."""
+        \"""Get all preference samples.\"""
         return self._preference_samples.copy()
 
     def clear_samples(self) -> None:
-        """Clear all preference samples."""
+        \"""Clear all preference samples.\"""
         self._preference_samples.clear()
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Get dataset statistics."""
+        \"""Get dataset statistics.\"""
         if not self._preference_samples:
             return {"total_samples": 0}
 
@@ -575,7 +575,7 @@ def train_dpo(
     dpo_config: Optional[DPOConfig] = None,
     output_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
+    \"""
     Convenience function for DPO training.
 
     Args:
@@ -586,7 +586,7 @@ def train_dpo(
 
     Returns:
         Training summary
-    """
+    \"""
     trainer = DPOTrainer(model, dpo_config)
 
     for sample in preference_samples:

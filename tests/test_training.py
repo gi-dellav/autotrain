@@ -178,7 +178,9 @@ class TestTrainingPipeline:
             enable_checker=True,
         )
 
-        expert = Expert(model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=1.0, api_key="test-key")
+        expert = Expert(
+            model_name="unsloth/Qwen3.5-27B-GGUF", production_rate=1.0, api_key="test-key"
+        )
         model._fine_tune = MagicMock()
 
         summary = model.train(

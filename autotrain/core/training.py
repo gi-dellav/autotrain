@@ -25,13 +25,13 @@ def _init_components(
 
     if is_vision:
         model._producer = VisionProducer(
-            model=model, # type: ignore
+            model=model,  # type: ignore
             prompt=model.prompts.producer,
             inference_config=model.inference_config,
         )
     else:
         model._producer = Producer(
-            model=model, # type: ignore
+            model=model,  # type: ignore
             prompt=model.prompts.producer,
             inference_config=model.inference_config,
         )
@@ -44,12 +44,14 @@ def _init_components(
                 exp, weight = exp_entry
                 expert_weights.append(ExpertWeight(expert=exp, weight=weight))
             elif hasattr(exp_entry, "production_rate"):
-                expert_weights.append(ExpertWeight(expert=exp_entry, weight=exp_entry.production_rate))
+                expert_weights.append(
+                    ExpertWeight(expert=exp_entry, weight=exp_entry.production_rate)
+                )
             else:
                 expert_weights.append(ExpertWeight(expert=exp_entry, weight=1.0))
 
     model._solver = Solver(
-        model=model, # type: ignore
+        model=model,  # type: ignore
         prompt=model.prompts.solver,
         inference_config=model.inference_config,
         experts=expert_weights if expert_weights else None,
@@ -58,7 +60,7 @@ def _init_components(
     expert_list = [ew.expert for ew in expert_weights] if expert_weights else []
 
     model._splitter = Splitter(
-        model=model, # type: ignore
+        model=model,  # type: ignore
         prompt=model.prompts.splitter,
         inference_config=model.inference_config,
         experts=expert_list,
@@ -66,7 +68,7 @@ def _init_components(
 
     if model.enable_checker:
         model._checker = Checker(
-            model=model, # type: ignore
+            model=model,  # type: ignore
             prompt=model.prompts.checker,
             inference_config=model.inference_config,
             experts=expert_list,
@@ -74,20 +76,25 @@ def _init_components(
         )
 
 
-def _prune_old_training_data(model: "BaseModel", current_iteration: int, keep_last_n_iters: int) -> None:
+def _prune_old_training_data(
+    model: "BaseModel", current_iteration: int, keep_last_n_iters: int
+) -> None:
     """Remove training data from iterations older than keep_last_n_iters."""
     if keep_last_n_iters <= 0:
         return
-    
+
     min_iteration = current_iteration - keep_last_n_iters + 1
-    
+
     # Prune _training_data, but always keep initial samples (iteration == -1)
     model._training_data = [
-        sample for sample in model._training_data
+        sample
+        for sample in model._training_data
         if sample.get("iteration", 0) == -1 or sample.get("iteration", 0) >= min_iteration
     ]
-    
-    print(f"Pruned training data to keep last {keep_last_n_iters} iterations (min_iteration={min_iteration})")
+
+    print(
+        f"Pruned training data to keep last {keep_last_n_iters} iterations (min_iteration={min_iteration})"
+    )
     print(f"Remaining training samples: {len(model._training_data)}")
 
 
@@ -104,12 +111,24 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
     )
 
     iteration = max(0, iteration)
-    epochs = evaluate_epochs(model._training_config.epochs_fn or model._training_config.epochs, iteration)
-    learning_rate = evaluate_learning_rate(model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration)
-    lora_alpha = evaluate_lora_alpha(model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration)
-    lora_dropout = evaluate_lora_dropout(model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration)
-    lora_rank = evaluate_lora_rank(model._peft_config.lora_rank_fn or model._peft_config.r, iteration)
-    weight_decay = evaluate_weight_decay(model._training_config.weight_decay_fn or model._training_config.weight_decay, iteration)
+    epochs = evaluate_epochs(
+        model._training_config.epochs_fn or model._training_config.epochs, iteration
+    )
+    learning_rate = evaluate_learning_rate(
+        model._training_config.learning_rate_fn or model._training_config.learning_rate, iteration
+    )
+    lora_alpha = evaluate_lora_alpha(
+        model._peft_config.lora_alpha_fn or model._peft_config.lora_alpha, iteration
+    )
+    lora_dropout = evaluate_lora_dropout(
+        model._peft_config.lora_dropout_fn or model._peft_config.lora_dropout, iteration
+    )
+    lora_rank = evaluate_lora_rank(
+        model._peft_config.lora_rank_fn or model._peft_config.r, iteration
+    )
+    weight_decay = evaluate_weight_decay(
+        model._training_config.weight_decay_fn or model._training_config.weight_decay, iteration
+    )
 
     if not model._training_data:
         return
@@ -145,9 +164,10 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
         train_dataset = train_dataset.map(format_example)
 
         use_gc = model._scalable_config.gradient_checkpointing
-        
+
         if is_vision:
             from unsloth import FastVisionModel
+
             model._fast_model = FastVisionModel.get_peft_model(
                 model=model._fast_model,
                 r=lora_rank,
@@ -159,6 +179,7 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
             )
         else:
             from unsloth import FastLanguageModel
+
             model._fast_model = FastLanguageModel.get_peft_model(
                 model=model._fast_model,
                 r=lora_rank,
@@ -169,9 +190,11 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
                 use_gradient_checkpointing="unsloth" if use_gc else False,
             )
 
-        batch_size = evaluate_batch_size(model._training_config.batch_size_fn or model._training_config.batch_size, iteration)
+        batch_size = evaluate_batch_size(
+            model._training_config.batch_size_fn or model._training_config.batch_size, iteration
+        )
         if not is_vision and model._scalable_config.batch_size_auto_tune:
-            batch_size = model.auto_tune_batch_size() # type: ignore
+            batch_size = model.auto_tune_batch_size()  # type: ignore
 
         fp16 = model._scalable_config.mixed_precision == "fp16"
         bf16 = model._scalable_config.mixed_precision == "bf16"
@@ -213,7 +236,9 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
         print(f"Fine-tuning error: {e}")
 
 
-def _fine_tune_vision(model: "BaseModel", iteration: int, resume_from_checkpoint: bool = False) -> None:
+def _fine_tune_vision(
+    model: "BaseModel", iteration: int, resume_from_checkpoint: bool = False
+) -> None:
     """Compatibility alias for _fine_tune."""
     _fine_tune(model, iteration, resume_from_checkpoint)
 
@@ -238,14 +263,16 @@ def train(
     tool_choice: Optional[str] = None,
 ) -> dict:
     """Unified training loop for both standard and vision models."""
-    if i <= 0: raise ValueError("i must be positive")
-    
+    if i <= 0:
+        raise ValueError("i must be positive")
+
     if template is not None and hasattr(model, "set_template"):
-        model.set_template(template) # type: ignore
+        model.set_template(template)  # type: ignore
 
     if tools or enable_tools:
         if tools:
-            for tool in tools: model.add_tool(tool)
+            for tool in tools:
+                model.add_tool(tool)
         print(f"Tool calling enabled: {model.list_tools()}")
 
     if resume_from_checkpoint:
@@ -253,12 +280,14 @@ def train(
         if checkpoints:
             model.load_checkpoint(checkpoint_id=checkpoints[-1].checkpoint_id)
             start_iteration = model._current_iteration + 1
-        else: start_iteration = 0
-    else: start_iteration = 0
+        else:
+            start_iteration = 0
+    else:
+        start_iteration = 0
 
     if initial_samples:
         for s in initial_samples:
-            model.add_sample(s) # type: ignore
+            model.add_sample(s)  # type: ignore
             # Mark initial samples as iteration -1 (always kept)
             if model._training_data:
                 model._training_data[-1]["iteration"] = -1
@@ -266,8 +295,9 @@ def train(
     if not model.is_loaded:
         model.load_model()
 
-    if benchmark: model.set_benchmark(benchmark)
-    
+    if benchmark:
+        model.set_benchmark(benchmark)
+
     _init_components(model, experts=experts or model.get_experts())
 
     best_accuracy = 0.0
@@ -291,17 +321,17 @@ def train(
 
         # Pipeline steps
         target_k = k or (len(initial_samples) if initial_samples else 10)
-        input_samples = model._producer.generate(target_k * model.sample_multiplier) # type: ignore
+        input_samples = model._producer.generate(target_k * model.sample_multiplier)  # type: ignore
         print(f"Produced {len(input_samples)} samples")
 
-        output_samples = model._solver.solve(input_samples) # type: ignore
+        output_samples = model._solver.solve(input_samples)  # type: ignore
         print(f"Solved {len(output_samples)} samples")
 
         if model.enable_checker and model._checker:
             output_samples = model._checker.verify(output_samples)
             print(f"Verified {len(output_samples)} samples")
 
-        selected_samples = model._splitter.select(output_samples, target_count=target_k) # type: ignore
+        selected_samples = model._splitter.select(output_samples, target_count=target_k)  # type: ignore
         print(f"Selected {len(selected_samples)} samples")
 
         # Prune old training data if keep_last_n_iters is set
@@ -310,7 +340,7 @@ def train(
 
         # Add to training data with iteration tracking
         for s in selected_samples:
-            model.add_sample(s) # type: ignore
+            model.add_sample(s)  # type: ignore
             # Add iteration metadata to the last added sample
             if model._training_data:
                 model._training_data[-1]["iteration"] = iteration
@@ -320,7 +350,7 @@ def train(
         # Evaluation
         curr_acc = 0.0
         if model.get_benchmark():
-            metrics = model.get_benchmark().evaluate(model=model, iteration=iteration, inference_config=model.inference_config) # type: ignore
+            metrics = model.get_benchmark().evaluate(model=model, iteration=iteration, inference_config=model.inference_config)  # type: ignore
             curr_acc = metrics.accuracy
             print(f"Accuracy: {curr_acc:.4f}")
             summary["benchmark_history"].append({"iteration": iteration, "accuracy": curr_acc})
@@ -330,9 +360,11 @@ def train(
                 summary["best_iteration"] = iteration
                 summary["best_accuracy"] = curr_acc
                 if keep_best_model:
-                    model.save_checkpoint(iteration, metadata={"is_best": True, "accuracy": curr_acc})
-                
-                if early_stopping and model.get_benchmark().has_stagnated(threshold=early_stopping_threshold, iterations=early_stopping_patience): # type: ignore
+                    model.save_checkpoint(
+                        iteration, metadata={"is_best": True, "accuracy": curr_acc}
+                    )
+
+                if early_stopping and model.get_benchmark().has_stagnated(threshold=early_stopping_threshold, iterations=early_stopping_patience):  # type: ignore
                     summary["stopped_early"] = True
                     break
 

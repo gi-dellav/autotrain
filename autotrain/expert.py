@@ -237,9 +237,9 @@ class Expert:
                 api_base=self.api_base,
                 api_version=self.api_version,
                 custom_llm_provider=self.custom_llm_provider,
-                reasoning_effort="high"
-                if self.thinking and self.inference_config.thinking
-                else None,
+                reasoning_effort=(
+                    "high" if self.thinking and self.inference_config.thinking else None
+                ),
             )
 
             result = response.choices[0].message.content
@@ -883,9 +883,9 @@ Provide an overall score and optionally scores for each criterion.""",
                 api_base=self.api_base,
                 api_version=self.api_version,
                 custom_llm_provider=self.custom_llm_provider,
-                reasoning_effort="high"
-                if self.thinking and self.inference_config.thinking
-                else None,
+                reasoning_effort=(
+                    "high" if self.thinking and self.inference_config.thinking else None
+                ),
             )
 
             result = response.choices[0].message
@@ -1056,9 +1056,9 @@ Provide an overall score and optionally scores for each criterion.""",
                     api_base=self.api_base,
                     api_version=self.api_version,
                     custom_llm_provider=self.custom_llm_provider,
-                    reasoning_effort="high"
-                    if self.thinking and self.inference_config.thinking
-                    else None,
+                    reasoning_effort=(
+                        "high" if self.thinking and self.inference_config.thinking else None
+                    ),
                 )
 
                 result = response.choices[0].message
@@ -1226,9 +1226,11 @@ class VisionExpert(Expert):
         max_tokens = max_tokens or self.inference_config.max_tokens
 
         response = litellm.completion(
-            model=f"{self.custom_llm_provider}/{self.model_name}"
-            if self.custom_llm_provider
-            else self.model_name,
+            model=(
+                f"{self.custom_llm_provider}/{self.model_name}"
+                if self.custom_llm_provider
+                else self.model_name
+            ),
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,

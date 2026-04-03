@@ -363,7 +363,10 @@ def terminal(command: str, working_dir: Optional[str] = None) -> str:
         return f"Error: {type(e).__name__}: {str(e)}"
 '''
 
-def web_search(query: str, max_results: int = 5, model: str = "openrouter/google/gemini-3.0-flash-preview") -> str:
+
+def web_search(
+    query: str, max_results: int = 5, model: str = "openrouter/google/gemini-3.0-flash-preview"
+) -> str:
     """
     Search the web for information.
 
