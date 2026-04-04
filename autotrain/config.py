@@ -79,11 +79,18 @@ class PEFTConfig:
     target_modules: Optional[list[str]] = None
     use_rslora: bool = False
     loftq_config: Optional[Dict[str, Any]] = None
+    tuning_method: str = "lora"  # "lora" or "qlora"
 
     def get_target_modules(self, model_type: str = "llama") -> list[str]:
         if self.target_modules:
             return self.target_modules
         return ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+    def __post_init__(self) -> None:
+        if self.tuning_method not in ["lora", "qlora"]:
+            raise ValueError(
+                f"tuning_method must be 'lora' or 'qlora', got '{self.tuning_method}'"
+            )
 
 
 @dataclass

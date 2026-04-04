@@ -358,3 +358,112 @@ class TestTrainingPipeline:
 
         assert summary["iterations_completed"] == 1
         assert model.inference_config.temperature == 0.9
+
+    def test_full_pipeline_lora_default(self, mock_unsloth, mock_trainer, temp_dir):
+        """Test full training pipeline uses LoRA by default."""
+        from autotrain import PEFTConfig
+
+        model = Model(
+            checkpoint_dir=str(temp_dir),
+            sample_multiplier=1,
+        )
+
+        # Default PEFTConfig should use LoRA
+        peft_config = model.get_peft_config()
+        assert peft_config.tuning_method == "lora"
+
+        model._fine_tune = MagicMock()
+
+        # Train with default (should use LoRA)
+        summary = model.train(
+            k=2,
+            i=1,
+        )
+
+        assert summary["iterations_completed"] == 1
+        # Verify load_in_4bit was False (LoRA)
+        mock_unsloth.FastLanguageModel.from_pretrained.assert_called()
+        call_kwargs = mock_unsloth.FastLanguageModel.from_pretrained.call_args[1]
+        assert call_kwargs.get("load_in_4bit") == False
+
+    def test_full_pipeline_qlora_explicit(self, mock_unsloth, mock_trainer, temp_dir):
+        """Test full training pipeline with explicit qLoRA."""
+        from autotrain import PEFTConfig
+
+        model = Model(
+            checkpoint_dir=str(temp_dir),
+            sample_multiplier=1,
+        )
+
+        # Set qLoRA
+        model.set_peft_config(
+            PEFTConfig(
+                tuning_method="qlora",
+            )
+        )
+
+        model._fine_tune = MagicMock()
+
+        # Train with qLoRA
+        summary = model.train(
+            k=2,
+            i=1,
+            tuning_method="qlora",
+        )
+
+        assert summary["iterations_completed"] == 1
+        # Verify load_in_4bit was True (qLoRA)
+        mock_unsloth.FastLanguageModel.from_pretrained.assert_called()
+        call_kwargs = mock_unsloth.FastLanguageModel.from_pretrained.call_args[1]
+        assert call_kwargs.get("load_in_4bit") == True
+
+    def test_full_pipeline_lora_explicit(self, mock_unsloth, mock_trainer, temp_dir):
+        """Test full training pipeline with explicit LoRA."""
+        model = Model(
+            checkpoint_dir=str(temp_dir),
+            sample_multiplier=1,
+        )
+
+        model._fine_tune = MagicMock()
+
+        # Explicitly set LoRA
+        summary = model.train(
+            k=2,
+            i=1,
+            tuning_method="lora",
+        )
+
+        assert summary["iterations_completed"] == 1
+        # Verify load_in_4bit was False (LoRA)
+        mock_unsloth.FastLanguageModel.from_pretrained.assert_called()
+        call_kwargs = mock_unsloth.FastLanguageModel.from_pretrained.call_args[1]
+        assert call_kwargs.get("load_in_4bit") == False
+
+    def test_invalid_tuning_method(self, mock_unsloth, temp_dir):
+        """Test that invalid tuning method raises error."""
+        model = Model(
+            checkpoint_dir=str(temp_dir),
+            sample_multiplier=1,
+        )
+
+        with pytest.raises(ValueError, match="tuning_method must be 'lora' or 'qlora'"):
+            model.train(
+                k=2,
+                i=1,
+                tuning_method="invalid",
+            )
+
+    def test_peft_config_tuning_method_validation(self):
+        """Test that PEFTConfig validates tuning_method."""
+        from autotrain import PEFTConfig
+
+        # Valid tuning methods
+        lora_config = PEFTConfig(tuning_method="lora")
+        assert lora_config.tuning_method == "lora"
+
+        qlora_config = PEFTConfig(tuning_method="qlora")
+        assert qlora_config.tuning_method == "qlora"
+
+        # Invalid tuning method
+        with pytest.raises(ValueError, match="tuning_method must be 'lora' or 'qlora'"):
+            PEFTConfig(tuning_method="invalid")

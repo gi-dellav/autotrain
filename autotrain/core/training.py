@@ -261,10 +261,35 @@ def train(
     enable_tools: bool = False,
     max_tool_calls: int = 10,
     tool_choice: Optional[str] = None,
+    tuning_method: str = "lora",
 ) -> dict:
-    """Unified training loop for both standard and vision models."""
+    """Unified training loop for both standard and vision models.
+    
+    Args:
+        model: The model to train.
+        k: Number of samples to generate per iteration.
+        i: Number of training iterations.
+        experts: List of expert models to use.
+        initial_samples: Initial training samples.
+        benchmark: Benchmark for evaluation.
+        early_stopping: Enable early stopping.
+        early_stopping_patience: Patience for early stopping.
+        early_stopping_threshold: Threshold for early stopping.
+        checkpoint_every: Save checkpoint every N iterations.
+        keep_best_model: Keep the best model checkpoint.
+        resume_from_checkpoint: Resume from last checkpoint.
+        template: Instruction template to use.
+        tools: List of tools to enable.
+        enable_tools: Enable tool calling.
+        max_tool_calls: Maximum number of tool calls.
+        tool_choice: Tool choice strategy.
+        tuning_method: Tuning method to use - "lora" (default) or "qlora".
+    """
     if i <= 0:
         raise ValueError("i must be positive")
+    
+    if tuning_method not in ["lora", "qlora"]:
+        raise ValueError(f"tuning_method must be 'lora' or 'qlora', got '{tuning_method}'")
 
     if template is not None and hasattr(model, "set_template"):
         model.set_template(template)  # type: ignore
@@ -293,7 +318,8 @@ def train(
                 model._training_data[-1]["iteration"] = -1
 
     if not model.is_loaded:
-        model.load_model()
+        load_in_4bit = tuning_method == "qlora"
+        model.load_model(load_in_4bit=load_in_4bit)
 
     if benchmark:
         model.set_benchmark(benchmark)
@@ -316,7 +342,8 @@ def train(
 
         if iteration > start_iteration:
             model._unload_model()
-            model.load_model()
+            load_in_4bit = tuning_method == "qlora"
+            model.load_model(load_in_4bit=load_in_4bit)
             _init_components(model, experts=experts or model.get_experts())
 
         # Pipeline steps

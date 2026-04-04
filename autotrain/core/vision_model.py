@@ -54,9 +54,16 @@ class VisionModel(BaseModel):
         self,
         max_seq_length: int = 2048,
         dtype: Optional[Any] = None,
-        load_in_4bit: bool = True,
+        load_in_4bit: bool = False,
     ) -> None:
-        """Load the unsloth VLM model."""
+        """Load the unsloth VLM model.
+        
+        Args:
+            max_seq_length: Maximum sequence length.
+            dtype: Data type for the model.
+            load_in_4bit: If True, uses qLoRA (4-bit quantization). If False, uses standard LoRA.
+                         Defaults to False (LoRA).
+        """
         try:
             from unsloth import FastVisionModel  # type: ignore[import-untyped]
 
@@ -70,7 +77,7 @@ class VisionModel(BaseModel):
             self._model = self._fast_model.model  # type: ignore
             self._processor = self._tokenizer
             self._is_model_loaded = True
-            print(f"Vision model loaded: {self._base_model_name}")
+            print(f"Vision model loaded: {self._base_model_name} ({'qLoRA' if load_in_4bit else 'LoRA'})")
         except ImportError:
             raise ImportError("unsloth is required. Install with: pip install unsloth")
 
