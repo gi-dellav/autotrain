@@ -20,7 +20,7 @@ def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
 class InferenceConfig:
     """Configuration for inference properties."""
 
-    temperature: float = 0.7
+    temperature: float = 0.4
     temperature_fn: Optional[Callable[[int], float]] = None
     max_tokens: int = 1024
     top_p: float = 0.9
@@ -30,6 +30,8 @@ class InferenceConfig:
     max_workers: int = 8
     use_async: bool = False
     async_max_concurrent: int = 8
+    producer_temperature: Union[float, Callable[[int], float]] = 1.0
+    splitter_temperature: Union[float, Callable[[int], float]] = 0.3
 
 
 @dataclass
@@ -90,9 +92,7 @@ class PEFTConfig:
 
     def __post_init__(self) -> None:
         if self.tuning_method not in ["lora", "qlora"]:
-            raise ValueError(
-                f"tuning_method must be 'lora' or 'qlora', got '{self.tuning_method}'"
-            )
+            raise ValueError(f"tuning_method must be 'lora' or 'qlora', got '{self.tuning_method}'")
 
 
 @dataclass
@@ -146,6 +146,8 @@ class ScalableTrainingConfig:
             raise ValueError(
                 f"gradient_checkpointing must be True, False, or 'unsloth', got '{self.gradient_checkpointing}'"
             )
+        if self.max_memory_mb is not None and self.max_memory_mb <= 0:
+            raise ValueError(f"max_memory_mb must be positive, got {self.max_memory_mb}")
         if self.dataloader_num_workers == 4 and self.num_workers != 4:
             self.dataloader_num_workers = self.num_workers
 

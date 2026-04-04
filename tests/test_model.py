@@ -22,7 +22,7 @@ class TestInferenceConfig:
         """Test default inference config values."""
         config = InferenceConfig()
 
-        assert config.temperature == 0.7
+        assert config.temperature == 0.4
         assert config.max_tokens == 1024
         assert config.top_p == 0.9
         assert config.frequency_penalty == 0.0

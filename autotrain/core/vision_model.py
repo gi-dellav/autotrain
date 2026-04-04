@@ -142,7 +142,7 @@ class VisionModel(BaseModel):
         self,
         prompt: str,
         images: Optional[List] = None,
-        temperature: float = 0.7,
+        temperature: float = 0.4,
         max_tokens: int = 256,
         **kwargs: Any,
     ) -> str:

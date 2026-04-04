@@ -1,6 +1,8 @@
 """Tests for CheckpointManager class."""
 
 import json
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -77,12 +79,14 @@ class TestCheckpointManager:
 
     def test_manager_init_default(self):
         """Test CheckpointManager initialization with defaults."""
-        manager = CheckpointManager()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            checkpoint_dir = Path(temp_dir) / "checkpoints"
+            manager = CheckpointManager(checkpoint_dir=str(checkpoint_dir))
 
-        assert manager.checkpoint_dir.name == "checkpoints"
-        assert manager.max_checkpoints == 5
-        assert manager.keep_best is True
-        assert manager._checkpoints == []
+            assert manager.checkpoint_dir.name == "checkpoints"
+            assert manager.max_checkpoints == 5
+            assert manager.keep_best is True
+            assert manager._checkpoints == []
 
     def test_manager_init_custom(self, temp_dir):
         """Test CheckpointManager initialization with custom params."""

@@ -380,7 +380,7 @@ async def _train_async(
 
             # Splitter
             selected_samples = await model._splitter.select_async(
-                output_samples, target_count=target_k, executor=executor
+                output_samples, target_count=target_k, executor=executor, iteration=iteration
             )
             print(f"Selected {len(selected_samples)} samples")
 

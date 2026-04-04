@@ -145,9 +145,13 @@ class VisionProducer:
                 diverse_tasks = self.DEFAULT_VISION_TASKS
                 task = diverse_tasks[seed % len(diverse_tasks)]
 
+                from autotrain.utils.function_evaluator import evaluate_temperature
+
+                temp = evaluate_temperature(self.inference_config.producer_temperature, seed)
+
                 result = self.model.generate(
                     prompt=task,
-                    temperature=0.8 + (seed % 10) * 0.02,
+                    temperature=temp,
                     max_tokens=256,
                 )
 

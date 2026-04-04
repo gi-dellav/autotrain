@@ -43,6 +43,7 @@ class Benchmark:
         expert_api_key: Optional[str] = None,
         expert_api_base: Optional[str] = None,
         thresholds: Optional[dict[EvaluationMode, float]] = None,
+        temperature: float = 0.3,
     ):
         """
         Initialize the Benchmark.
@@ -53,11 +54,13 @@ class Benchmark:
             expert_api_key: Optional API key for the expert model provider
             expert_api_base: Optional API base URL for the expert model
             thresholds: Custom thresholds for each evaluation mode (0-1)
+            temperature: Temperature for LLM judge generation (0.0-2.0)
         """
         self.name = name
         self.expert_model_name = expert_model_name or "unsloth/Qwen3.5-27B-GGUF"
         self.expert_api_key = expert_api_key
         self.expert_api_base = expert_api_base
+        self.temperature = temperature
 
         self._thresholds = self.DEFAULT_THRESHOLDS.copy()
         if thresholds:
@@ -332,7 +335,7 @@ class Benchmark:
         response = completion(
             model=self.expert_model_name,
             messages=messages,
-            temperature=0.3,
+            temperature=self.temperature,
             max_tokens=500,
             api_key=self.expert_api_key,
             api_base=self.expert_api_base,

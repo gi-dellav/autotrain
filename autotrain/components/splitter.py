@@ -107,7 +107,9 @@ class Splitter:
 
         return None, False
 
-    def select(self, samples: list["Sample"], target_count: int, executor=None) -> list["Sample"]:
+    def select(
+        self, samples: list["Sample"], target_count: int, executor=None, iteration: int = 0
+    ) -> list["Sample"]:
         """
         Select useful samples from the input (with optional parallelization).
 
@@ -115,6 +117,7 @@ class Splitter:
             samples: List of samples to select from
             target_count: Target number of samples to return
             executor: Optional shared ThreadPoolExecutor to use
+            iteration: Current iteration for temperature evaluation
 
         Returns:
             Selected samples
@@ -142,39 +145,44 @@ class Splitter:
         if non_trivial_groups:
             use_async = getattr(self.model.inference_config, "use_async", False)
             max_workers = self.model.inference_config.max_workers
+            if not isinstance(max_workers, int):
+                max_workers = 8
 
             if executor is not None or (use_async and max_workers > 1):
                 try:
                     from concurrent.futures import ThreadPoolExecutor
+                    from functools import partial
+
+                    select_func = partial(self._select_best, iteration=iteration)
 
                     if executor is not None:
                         # Use shared executor
-                        best_from_groups = list(executor.map(self._select_best, non_trivial_groups))
+                        best_from_groups = list(executor.map(select_func, non_trivial_groups))
                     else:
                         # Create own executor with configured workers
                         with ThreadPoolExecutor(max_workers=max_workers) as local_executor:
                             best_from_groups = list(
-                                local_executor.map(self._select_best, non_trivial_groups)
+                                local_executor.map(select_func, non_trivial_groups)
                             )
 
                     selected.extend([s for s in best_from_groups if s is not None])
                 except Exception as e:
                     print(f"Warning: Parallel selection failed, falling back to sequential: {e}")
                     for group in non_trivial_groups:
-                        best = self._select_best(group)
+                        best = self._select_best(group, iteration)
                         if best is not None:
                             selected.append(best)
             else:
                 # Sequential fallback
                 for group in non_trivial_groups:
-                    best = self._select_best(group)
+                    best = self._select_best(group, iteration)
                     if best is not None:
                         selected.append(best)
 
         # Ensure we return exactly target_count samples
         return selected[:target_count]
 
-    def _select_best(self, samples: list["Sample"]) -> Optional["Sample"]:
+    def _select_best(self, samples: list["Sample"], iteration: int = 0) -> Optional["Sample"]:
         """
         Select the best sample from a group.
 
@@ -182,6 +190,7 @@ class Splitter:
 
         Args:
             samples: List of samples to select from
+            iteration: Current iteration for temperature evaluation
 
         Returns:
             Selected best sample
@@ -223,9 +232,9 @@ class Splitter:
                 print(f"Warning: Expert selection failed, using model: {e}")
 
         # Model-based selection
-        return self._model_select(samples)
+        return self._model_select(samples, iteration)
 
-    def _model_select(self, samples: list["Sample"]) -> Optional["Sample"]:
+    def _model_select(self, samples: list["Sample"], iteration: int = 0) -> Optional["Sample"]:
         """
         Select best sample using the in-training model.
         Uses model to compare samples pairwise.
@@ -236,7 +245,7 @@ class Splitter:
         best_sample = samples[0]
 
         for i in range(1, len(samples)):
-            comparison = self._compare_with_model(best_sample, samples[i])
+            comparison = self._compare_with_model(best_sample, samples[i], iteration)
             if comparison.get("winner") == "b":
                 best_sample = samples[i]
 
@@ -244,7 +253,9 @@ class Splitter:
         best_sample.metadata["selection_method"] = "model_comparison"
         return best_sample
 
-    def _compare_with_model(self, sample_a: "Sample", sample_b: "Sample") -> dict:
+    def _compare_with_model(
+        self, sample_a: "Sample", sample_b: "Sample", iteration: int = 0
+    ) -> dict:
         """
         Use model to compare two samples.
         Returns comparison result with winner and explanation.
@@ -265,9 +276,13 @@ Select the better option and explain why.
 Respond with 'A' or 'B' followed by your reasoning."""
 
         try:
+            from autotrain.utils.function_evaluator import evaluate_temperature
+
+            temp = evaluate_temperature(self.inference_config.splitter_temperature, iteration)
+
             result = self.model.generate(
                 prompt=comparison_prompt,
-                temperature=0.3,
+                temperature=temp,
                 max_tokens=128,
             )
 
@@ -338,7 +353,7 @@ Respond with 'A' or 'B' followed by your reasoning."""
         return score
 
     async def select_async(
-        self, samples: list["Sample"], target_count: int, executor=None
+        self, samples: list["Sample"], target_count: int, executor=None, iteration: int = 0
     ) -> list["Sample"]:
         """
         Select useful samples from the input (async).
@@ -347,6 +362,7 @@ Respond with 'A' or 'B' followed by your reasoning."""
             samples: List of samples to select from
             target_count: Target number of samples to return
             executor: AsyncExecutor to use (required for async)
+            iteration: Current iteration for temperature evaluation
 
         Returns:
             Selected samples
@@ -374,14 +390,14 @@ Respond with 'A' or 'B' followed by your reasoning."""
 
             from functools import partial
 
-            select_func = partial(self._select_best_async, executor=executor)
+            select_func = partial(self._select_best_async, iteration=iteration, executor=executor)
             best_from_groups = await executor.map_async(select_func, non_trivial_groups)
             selected.extend([s for s in best_from_groups if s is not None])
 
         return selected[:target_count]
 
     async def _select_best_async(
-        self, samples: list["Sample"], executor=None
+        self, samples: list["Sample"], iteration: int = 0, executor=None
     ) -> Optional["Sample"]:
         """
         Select the best sample from a group (async).
@@ -390,6 +406,7 @@ Respond with 'A' or 'B' followed by your reasoning."""
 
         Args:
             samples: List of samples to select from
+            iteration: Current iteration for temperature evaluation
             executor: AsyncExecutor for running sync model selection
 
         Returns:
@@ -434,7 +451,7 @@ Respond with 'A' or 'B' followed by your reasoning."""
         # Model-based selection (run sync _model_select in thread)
         if executor is None:
             raise ValueError("executor is required for model selection")
-        return await executor.run_sync(self._model_select, samples)
+        return await executor.run_sync(self._model_select, samples, iteration)
 
 
 __all__ = ["Splitter"]

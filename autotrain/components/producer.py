@@ -143,9 +143,13 @@ class Producer:
                 # Add variation to the prompt for diversity
                 varied_prompt = f"{prompt}\n\nGenerate sample variation {seed + 1}."
 
+                from autotrain.utils.function_evaluator import evaluate_temperature
+
+                temp = evaluate_temperature(self.inference_config.producer_temperature, seed)
+
                 result = self.model.generate(
                     prompt=varied_prompt,
-                    temperature=0.8 + (seed % 10) * 0.02,  # Vary temperature for diversity
+                    temperature=temp,
                     max_tokens=256,
                 )
 

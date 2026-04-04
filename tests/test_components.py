@@ -292,9 +292,11 @@ class TestSplitter:
         assert len(selected) == 3
 
     def test_splitter_select_best_default(self):
-        """Test Splitter._select_best uses default when no expert."""
+        """Test Splitter._select_best uses model-based selection when no expert."""
         mock_model = MagicMock()
         config = InferenceConfig()
+        # Mock the generate method to return a clear "A" response
+        mock_model.generate.return_value = "A"
 
         splitter = Splitter(
             model=mock_model,
@@ -309,8 +311,10 @@ class TestSplitter:
 
         best = splitter._select_best(samples)
 
+        # With our mock returning "A", the first sample should be selected
         assert best == samples[0]
-        assert best.metadata["selected_by"] == "default"
+        assert best.metadata["selected_by"] == "model"
+        assert best.metadata["selection_method"] == "model_comparison"
 
 
 class TestChecker:
