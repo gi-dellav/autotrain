@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from autotrain.data_types import Sample
     from autotrain.expert import Expert
 
+from autotrain.components.config import ExpertWeight
 
 class Splitter:
     """
@@ -24,27 +25,86 @@ class Splitter:
         model: "Model",
         prompt: Union[str, list[str]],
         inference_config: "InferenceConfig",
-        experts: Optional[list["Expert"]] = None,
+        experts: Optional[list[Union["Expert", ExpertWeight]]] = None,
     ):
         self.model = model
         self.prompt = prompt
         self.inference_config = inference_config
-        self._experts = experts or []
+        self._experts = []
+        self._expert_weights: list[ExpertWeight] = []
+        
+        # Handle ExpertWeight objects or bare Experts
+        if experts:
+            for expert in experts:
+                if isinstance(expert, ExpertWeight):
+                    self._expert_weights.append(expert)
+                    self._experts.append(expert.expert)
+                else:
+                    # Default weight = 1.0 for bare Expert
+                    self._expert_weights.append(ExpertWeight(expert=expert, weight=1.0))
+                    self._experts.append(expert)
 
     @property
     def experts(self) -> list["Expert"]:
         """Get list of experts."""
         return self._experts.copy()
 
-    def add_expert(self, expert: "Expert") -> None:
-        """Add an expert for selection."""
+    def add_expert(self, expert: "Expert", weight: float = 1.0) -> None:
+        """Add an expert with a specific weight."""
         if expert not in self._experts:
             self._experts.append(expert)
+            self._expert_weights.append(ExpertWeight(expert=expert, weight=weight))
 
     def remove_expert(self, expert: "Expert") -> None:
         """Remove an expert."""
         if expert in self._experts:
             self._experts.remove(expert)
+            self._expert_weights = [ew for ew in self._expert_weights if ew.expert != expert]
+
+    def _get_normalized_weights(self) -> list[tuple["Expert", float]]:
+        """Get experts with normalized weights."""
+        if not self._expert_weights:
+            return []
+        
+        total_weight = sum(ew.weight for ew in self._expert_weights)
+        if total_weight == 0:
+            return []
+        
+        return [(ew.expert, ew.weight / total_weight) for ew in self._expert_weights]
+
+    def _select_source(self) -> tuple[Optional["Expert"], bool]:
+        """
+        Select source using statistical weights.
+        Returns tuple of (selected expert or None, is_expert)
+        """
+        if not self._expert_weights:
+            return None, False
+        
+        # Calculate total expert weight
+        total_expert_weight = sum(ew.weight for ew in self._expert_weights)
+        
+        # Model gets remaining weight (1.0 - total_expert_weight)
+        model_weight = max(0.0, 1.0 - total_expert_weight)
+        
+        # Create weighted selection list
+        selections: list[tuple[Optional["Expert"], float]] = []
+        for ew in self._expert_weights:
+            selections.append((ew.expert, ew.weight))
+        selections.append((None, model_weight))
+        
+        total = sum(w for _, w in selections)
+        if total == 0:
+            return None, False
+        
+        # Weighted random selection
+        r = random.random()
+        cumulative = 0.0
+        for expert, weight in selections:
+            cumulative += weight / total
+            if r <= cumulative:
+                return expert, expert is not None
+        
+        return None, False
 
     def select(self, samples: list["Sample"], target_count: int) -> list["Sample"]:
         """
@@ -81,8 +141,7 @@ class Splitter:
         """
         Select the best sample from a group.
 
-        Uses expert comparison when available, otherwise falls back to
-        heuristic-based selection (length, diversity, etc.).
+        Uses expert comparison when available, otherwise uses model-based selection.
 
         Args:
             samples: List of samples to select from
@@ -93,10 +152,12 @@ class Splitter:
         if len(samples) < 2:
             return samples[0] if samples else None
 
-        # Try to use expert for selection if available
-        if self._experts:
+        # Select source using statistical weights
+        expert, is_expert = self._select_source()
+        
+        if is_expert and expert:
+            # Expert-based selection
             try:
-                expert = self._experts[0]
                 sample_outputs = [s.output_data for s in samples]
 
                 # Use expert's compare method for pairwise comparison
@@ -122,21 +183,68 @@ class Splitter:
                             sample.metadata["selected_by"] = f"expert:{expert.model_name}"
                             return sample
             except Exception as e:
-                print(f"Warning: Expert selection failed, using fallback: {e}")
+                print(f"Warning: Expert selection failed, using model: {e}")
 
-        # Fallback: Heuristic-based selection
-        # Score samples based on multiple criteria
-        scored_samples = []
-        for sample in samples:
-            score = self._score_sample(sample)
-            scored_samples.append((sample, score))
+        # Model-based selection
+        return self._model_select(samples)
 
-        # Select highest scored sample
-        scored_samples.sort(key=lambda x: x[1], reverse=True)
-        best_sample = scored_samples[0][0]
-        best_sample.metadata["selected_by"] = "default"  # Keep "default" for backward compatibility
-        best_sample.metadata["selection_score"] = scored_samples[0][1]
+    def _model_select(self, samples: list["Sample"]) -> Optional["Sample"]:
+        """
+        Select best sample using the in-training model.
+        Uses model to compare samples pairwise.
+        """
+        if len(samples) < 2:
+            return samples[0] if samples else None
+        
+        best_sample = samples[0]
+        
+        for i in range(1, len(samples)):
+            comparison = self._compare_with_model(best_sample, samples[i])
+            if comparison.get("winner") == "b":
+                best_sample = samples[i]
+        
+        best_sample.metadata["selected_by"] = "model"
+        best_sample.metadata["selection_method"] = "model_comparison"
         return best_sample
+
+    def _compare_with_model(self, sample_a: "Sample", sample_b: "Sample") -> dict:
+        """
+        Use model to compare two samples.
+        Returns comparison result with winner and explanation.
+        """
+        # Get splitter prompt
+        prompt = self.model.prompts.get_splitter()
+        
+        # Format comparison prompt
+        comparison_prompt = f"""{prompt}
+
+Input: {sample_a.input_data}
+
+Option A: {sample_a.output_data}
+Option B: {sample_b.output_data}
+
+Compare these options for training quality.
+Select the better option and explain why.
+Respond with 'A' or 'B' followed by your reasoning."""
+        
+        try:
+            result = self.model.generate(
+                prompt=comparison_prompt,
+                temperature=0.3,
+                max_tokens=128,
+            )
+            
+            if isinstance(result, str):
+                # Parse A/B choice from result
+                if "A" in result.upper() and "B" not in result.upper():
+                    return {"winner": "a", "explanation": result.strip()}
+                elif "B" in result.upper():
+                    return {"winner": "b", "explanation": result.strip()}
+        except Exception as e:
+            print(f"Warning: Model comparison failed: {e}")
+        
+        # Fallback: random choice if parsing fails
+        return {"winner": random.choice(["a", "b"]), "explanation": "fallback_random"}
 
     def _score_sample(self, sample: "Sample") -> float:
         """
