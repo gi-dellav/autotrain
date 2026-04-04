@@ -139,7 +139,7 @@ class TestConfigFunctionalParameters:
         assert config.keep_last_n_iters == 5
 
         config_default = TrainingConfig()
-        assert config_default.keep_last_n_iters is None
+        assert config_default.keep_last_n_iters == 10
 
 
 class TestTrainingDataPruning:
