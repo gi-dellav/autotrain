@@ -50,7 +50,7 @@ class VisionModel(BaseModel):
         """Access the processor."""
         return self._processor
 
-    def load_model(
+    def load_model(  # type: ignore[override]
         self,
         max_seq_length: int = 2048,
         dtype: Optional[Any] = None,
@@ -58,7 +58,7 @@ class VisionModel(BaseModel):
     ) -> None:
         """Load the unsloth VLM model."""
         try:
-            from unsloth import FastVisionModel
+            from unsloth import FastVisionModel  # type: ignore[import-untyped]
 
             self._fast_model, self._tokenizer = FastVisionModel.from_pretrained(
                 model_name=self._base_model_name,
@@ -67,7 +67,7 @@ class VisionModel(BaseModel):
                 load_in_4bit=load_in_4bit,
             )
 
-            self._model = self._fast_model.model
+            self._model = self._fast_model.model  # type: ignore
             self._processor = self._tokenizer
             self._is_model_loaded = True
             print(f"Vision model loaded: {self._base_model_name}")
@@ -131,24 +131,27 @@ class VisionModel(BaseModel):
                 }
             )
 
-    def generate(
+    def generate(  # type: ignore[override]
         self,
         prompt: str,
         images: Optional[List] = None,
         temperature: float = 0.7,
         max_tokens: int = 256,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """Generate text using the model."""
         if not self._is_model_loaded:
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
-        messages = [{"role": "user", "content": [{"type": "image"}] if images else []}]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "image"}] if images else []}]
         if images:
             messages[0]["content"].append({"type": "text", "text": prompt})
         else:
             messages[0]["content"] = [{"type": "text", "text": prompt}]
 
+        if self._tokenizer is None:
+            raise RuntimeError("Tokenizer not loaded")
+            
         input_text = self._tokenizer.apply_chat_template(messages, add_generation_prompt=True)
         inputs = self._tokenizer(
             images[0] if images else None,

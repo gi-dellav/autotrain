@@ -153,14 +153,14 @@ def format_sample(
 
 
 def format_samples_batch(
-    samples: list[dict],
+    samples: List[Dict[str, Any]],
     template: Optional[InstructionTemplate] = None,
     model_name: Optional[str] = None,
     system_prompt: Optional[str] = None,
     instruction_key: str = "instruction",
     input_key: str = "input",
     output_key: str = "output",
-) -> list[str]:
+) -> List[str]:
     """Format a batch of samples."""
     if template is None:
         if model_name:
@@ -253,15 +253,15 @@ def apply_chat_template(
     if tokenize:
         if tokenizer is None:
             raise ValueError("tokenizer must be provided when tokenize=True")
-        return tokenizer.encode(result, add_special_tokens=False)
+        return tokenizer.encode(result, add_special_tokens=False)  # type: ignore[no-any-return]
 
     return result
 
 
 def _apply_role_mapping(
-    messages: list[dict],
+    messages: List[Dict[str, Any]],
     role_mapping: Dict[str, str],
-) -> list[dict]:
+) -> List[Dict[str, Any]]:
     """Apply role mapping to messages."""
     mapped = []
     for msg in messages:
@@ -309,9 +309,9 @@ def standardize_sharegpt(
 
     # Try to use Unsloth's implementation first
     try:
-        from unsloth import standardize_sharegpt as unsloth_standardize_sharegpt
+        from unsloth import standardize_sharegpt as unsloth_standardize_sharegpt  # type: ignore[import-untyped]
 
-        return unsloth_standardize_sharegpt(data)
+        return unsloth_standardize_sharegpt(data)  # type: ignore[no-any-return]
     except ImportError:
         pass
 
@@ -327,7 +327,13 @@ def standardize_sharegpt(
                 conv.append({"role": role, "content": content})
             standardized.append(conv)
         else:
-            standardized.append(conversation)
+            # Single conversation case - wrap in list
+            conv = []
+            from_role = conversation.get(column_mapping["from"], conversation.get("role", "user"))
+            content = conversation.get(column_mapping["value"], conversation.get("content", ""))
+            role = role_mapping.get(from_role, from_role)
+            conv.append({"role": role, "content": content})
+            standardized.append(conv)
 
     return standardized
 
@@ -370,7 +376,12 @@ def to_sharegpt(
                 conv.append({column_mapping["from"]: from_role, column_mapping["value"]: content})
             sharegpt_data.append(conv)
         else:
-            sharegpt_data.append(conversation)
+            # Single message case - wrap in list
+            role = conversation.get("role", "user")
+            content = conversation.get("content", "")
+            from_role = role_mapping.get(role, role)
+            conv = [{column_mapping["from"]: from_role, column_mapping["value"]: content}]
+            sharegpt_data.append(conv)
 
     return sharegpt_data
 
@@ -443,7 +454,7 @@ def get_chat_template(
     """
     # Try to use Unsloth's native implementation first for maximum correctness
     try:
-        from unsloth.chat_templates import get_chat_template as unsloth_get_chat_template
+        from unsloth.chat_templates import get_chat_template as unsloth_get_chat_template  # type: ignore[import-untyped]
 
         return unsloth_get_chat_template(
             tokenizer=tokenizer,

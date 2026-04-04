@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 from autotrain.data_types import Sample
 
@@ -92,7 +92,7 @@ class CPTDataset:
             if isinstance(item, str):
                 self.add_text(item)
             elif isinstance(item, dict):
-                text = item.get(self.text_key, item.get("text", ""))
+                text = str(item.get(self.text_key, item.get("text", "")))
                 metadata = {k: v for k, v in item.items() if k != self.text_key}
                 self.add_text(text, metadata)
         return self
@@ -305,7 +305,7 @@ class CPTDataset:
     def __getitem__(self, idx: int) -> Sample:
         return self._samples[idx]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Sample]:
         return iter(self._samples)
 
     def __repr__(self) -> str:

@@ -22,7 +22,7 @@ class BenchmarkSample:
     input_data: str
     expected_output: str
     evaluation_mode: EvaluationMode = EvaluationMode.EXACT_MATCH
-    metadata: dict = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -52,7 +52,7 @@ class BenchmarkResult:
     model_output: str
     is_correct: bool
     score: float = 0.0
-    evaluation_details: dict = field(default_factory=dict)
+    evaluation_details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""

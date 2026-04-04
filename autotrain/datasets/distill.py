@@ -160,7 +160,7 @@ class ExpertDistiller:
         conversations = []
 
         for topic in topics:
-            messages = []
+            messages: list[dict[str, str]] = []
 
             for turn in range(num_turns):
                 if turn == 0:

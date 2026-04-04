@@ -84,7 +84,7 @@ class Model(BaseModel):
         """Get the current instruction template."""
         return self._template
 
-    def load_model(
+    def load_model(  # type: ignore[override]
         self,
         max_seq_length: int = 2048,
         dtype: Optional[Any] = None,
@@ -92,7 +92,7 @@ class Model(BaseModel):
     ) -> None:
         """Load the unsloth model."""
         try:
-            from unsloth import FastLanguageModel
+            from unsloth import FastLanguageModel  # type: ignore[import-untyped]
 
             self._fast_model, self._tokenizer = FastLanguageModel.from_pretrained(
                 model_name=self._base_model_name,
@@ -196,7 +196,7 @@ class Model(BaseModel):
             self, expert, production_weight=production_weight or weight, check_weight=check_weight
         )
 
-    def generate(
+    def generate(  # type: ignore[override]
         self,
         prompt: str,
         temperature: Optional[float] = None,

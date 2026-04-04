@@ -2,7 +2,7 @@
 
 import random
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 
 def _get_prompt(prompt: Optional[Union[str, list[str]]]) -> Optional[str]:
@@ -42,22 +42,26 @@ class Prompts:
     def get_producer(self, topic: str, format: str = "json") -> str:
         from .prompts import bake_producer
 
-        return _get_prompt(self.producer) if self.producer else bake_producer(topic, format)
+        prompt = _get_prompt(self.producer)
+        return prompt if prompt is not None else bake_producer(topic, format)
 
     def get_solver(self, topic: Optional[str] = None, context: str = "") -> str:
         from .prompts import bake_solver
 
-        return _get_prompt(self.solver) if self.solver else bake_solver(topic, context)
+        prompt = _get_prompt(self.solver)
+        return prompt if prompt is not None else bake_solver(topic, context)
 
     def get_splitter(self) -> str:
         from .prompts import SPLITTER_DEFAULT
 
-        return _get_prompt(self.splitter) if self.splitter else SPLITTER_DEFAULT
+        prompt = _get_prompt(self.splitter)
+        return prompt if prompt is not None else SPLITTER_DEFAULT
 
     def get_checker(self) -> str:
         from .prompts import CHECKER_DEFAULT
 
-        return _get_prompt(self.checker) if self.checker else CHECKER_DEFAULT
+        prompt = _get_prompt(self.checker)
+        return prompt if prompt is not None else CHECKER_DEFAULT
 
 
 @dataclass
@@ -74,7 +78,7 @@ class PEFTConfig:
     use_gradient_checkpointing: str = "unsloth"
     target_modules: Optional[list[str]] = None
     use_rslora: bool = False
-    loftq_config: Optional[dict] = None
+    loftq_config: Optional[Dict[str, Any]] = None
 
     def get_target_modules(self, model_type: str = "llama") -> list[str]:
         if self.target_modules:
@@ -122,7 +126,7 @@ class ScalableTrainingConfig:
     pin_memory: bool = True
     use_flash_attention: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.mixed_precision not in ["fp16", "bf16", "fp32"]:
             raise ValueError(
                 f"mixed_precision must be 'fp16', 'bf16', or 'fp32', got '{self.mixed_precision}'"

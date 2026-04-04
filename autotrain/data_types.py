@@ -10,7 +10,7 @@ class Sample:
 
     input_data: str
     output_data: str
-    metadata: dict = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert sample to dictionary."""

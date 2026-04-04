@@ -53,7 +53,7 @@ class DatasetFormatter:
         system_prompt: Optional[str] = None,
     ) -> str:
         """Format a single sample."""
-        return self.template.format_training_sample(
+        return self.template.format_training_sample(  # type: ignore[no-any-return]
             instruction=instruction,
             input_data=input_data,
             output=output,
@@ -67,7 +67,7 @@ class DatasetFormatter:
         system_prompt: Optional[str] = None,
     ) -> str:
         """Format a prompt for inference (without output)."""
-        return self.template.format_prompt(
+        return self.template.format_prompt(  # type: ignore[no-any-return]
             instruction=instruction,
             input_data=input_data,
             system_prompt=system_prompt,
@@ -115,7 +115,7 @@ class DatasetFormatter:
 
     def tokenize_batch(
         self,
-        tokenizer,
+        tokenizer: Any,
         texts: List[str],
         max_length: int = 512,
         padding: str = "max_length",
@@ -128,7 +128,7 @@ class DatasetFormatter:
             padding=padding,
             truncation=truncation,
             return_tensors="pt",
-        )
+        )  # type: ignore[no-any-return]
 
     def apply_chat_template(
         self,

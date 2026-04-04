@@ -26,13 +26,13 @@ def _init_components(
     if is_vision:
         model._producer = VisionProducer(
             model=model,  # type: ignore
-            prompt=model.prompts.producer,
+            prompt=model.prompts.producer,  # type: ignore
             inference_config=model.inference_config,
         )
     else:
         model._producer = Producer(
             model=model,  # type: ignore
-            prompt=model.prompts.producer,
+            prompt=model.prompts.producer,  # type: ignore
             inference_config=model.inference_config,
         )
 
@@ -52,16 +52,16 @@ def _init_components(
 
     model._solver = Solver(
         model=model,  # type: ignore
-        prompt=model.prompts.solver,
+        prompt=model.prompts.solver,  # type: ignore
         inference_config=model.inference_config,
-        experts=expert_weights if expert_weights else None,
+        experts=expert_weights if expert_weights else None,  # type: ignore
     )
 
     expert_list = [ew.expert for ew in expert_weights] if expert_weights else []
 
     model._splitter = Splitter(
         model=model,  # type: ignore
-        prompt=model.prompts.splitter,
+        prompt=model.prompts.splitter,  # type: ignore
         inference_config=model.inference_config,
         experts=expert_list,
     )
@@ -69,7 +69,7 @@ def _init_components(
     if model.enable_checker:
         model._checker = Checker(
             model=model,  # type: ignore
-            prompt=model.prompts.checker,
+            prompt=model.prompts.checker,  # type: ignore
             inference_config=model.inference_config,
             experts=expert_list,
             rewrite_mode=model.checker_rewrite_mode,
@@ -136,9 +136,9 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
     is_vision = hasattr(model, "processor")
 
     try:
-        from datasets import Dataset
-        from transformers import TrainingArguments
-        from trl import SFTTrainer
+        from datasets import Dataset  # type: ignore[import-untyped]
+        from transformers import TrainingArguments  # type: ignore[import-untyped]
+        from trl import SFTTrainer  # type: ignore[import-untyped]
 
         train_dataset = Dataset.from_list(model._training_data)
 
@@ -166,7 +166,7 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
         use_gc = model._scalable_config.gradient_checkpointing
 
         if is_vision:
-            from unsloth import FastVisionModel
+            from unsloth import FastVisionModel  # type: ignore[import-untyped]
 
             model._fast_model = FastVisionModel.get_peft_model(
                 model=model._fast_model,
@@ -178,7 +178,7 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
                 use_gradient_checkpointing="unsloth" if use_gc else False,
             )
         else:
-            from unsloth import FastLanguageModel
+            from unsloth import FastLanguageModel  # type: ignore[import-untyped]
 
             model._fast_model = FastLanguageModel.get_peft_model(
                 model=model._fast_model,
@@ -223,12 +223,12 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
         )
 
         trainer = SFTTrainer(
-            model=model._fast_model,
+            model=model._fast_model,  # type: ignore
             tokenizer=model._tokenizer,
             train_dataset=train_dataset,
-            dataset_text_field="text",
+            dataset_text_field="text",  # type: ignore
             args=training_args,
-        )
+        )  # type: ignore
 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
@@ -301,7 +301,7 @@ def train(
     _init_components(model, experts=experts or model.get_experts())
 
     best_accuracy = 0.0
-    summary = {
+    summary: dict[str, Any] = {
         "iterations_completed": 0,
         "total_samples": 0,
         "benchmark_history": [],
@@ -375,9 +375,10 @@ def train(
         summary["total_samples"] = len(model.get_samples())
 
     # Export benchmark results
-    if model.get_benchmark():
+    benchmark = model.get_benchmark()
+    if benchmark:
         results_path = Path(model._checkpoint_manager.checkpoint_dir) / "benchmark_results.json"
-        model.get_benchmark().export_results(str(results_path))
+        benchmark.export_results(str(results_path))
 
     return summary
 

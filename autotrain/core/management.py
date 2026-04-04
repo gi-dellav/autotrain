@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
@@ -44,7 +45,7 @@ def remove_expert(model: "BaseModel", expert: "Expert") -> None:
         model._checker.remove_expert(expert)
 
 
-def clear_experts(model: "Model") -> None:
+def clear_experts(model: "BaseModel") -> None:
     """Clear all experts from all components."""
     if model._solver:
         model._solver.clear_experts()
@@ -100,7 +101,7 @@ def set_benchmark(
     return model._benchmark
 
 
-def get_benchmark(model: "Model") -> Optional["Benchmark"]:
+def get_benchmark(model: "BaseModel") -> Optional["Benchmark"]:
     """Get the current benchmark."""
     return model._benchmark
 
@@ -144,7 +145,7 @@ def save_checkpoint(
         benchmark_accuracy = model._benchmark.best_metrics.accuracy
 
     model._checkpoint_manager.save(
-        model=model,
+        model=model,  # type: ignore
         iteration=iteration,
         benchmark_accuracy=benchmark_accuracy,
         metadata=metadata,
@@ -157,15 +158,15 @@ def load_checkpoint(
     iteration: Optional[int] = None,
 ) -> None:
     """Load a checkpoint."""
-    model._checkpoint_manager.load(model=model, checkpoint_id=checkpoint_id, iteration=iteration)
+    model._checkpoint_manager.load(model=model, checkpoint_id=checkpoint_id, iteration=iteration)  # type: ignore
 
 
-def restore_best_checkpoint(model: "Model") -> None:
+def restore_best_checkpoint(model: "BaseModel") -> None:
     """Restore the best checkpoint (by benchmark accuracy)."""
-    model._checkpoint_manager.restore_best(model)
+    model._checkpoint_manager.restore_best(model)  # type: ignore
 
 
-def list_checkpoints(model: "Model") -> list:
+def list_checkpoints(model: "BaseModel") -> list:
     """List all available checkpoints."""
     return model._checkpoint_manager.list_checkpoints()
 
@@ -315,8 +316,8 @@ def _parse_tool_calls(response_text: str) -> List[Dict[str, Any]]:
         matches = re.finditer(pattern, response_text, re.DOTALL)
         for match in matches:
             try:
-                tool_name = match.group(1) if match.lastindex >= 1 else None
-                args_str = match.group(2) if match.lastindex >= 2 else "{}"
+                tool_name = match.group(1) if match.lastindex is not None and match.lastindex >= 1 else None
+                args_str = match.group(2) if match.lastindex is not None and match.lastindex >= 2 else "{}"
 
                 if tool_name:
                     tool_args = json.loads(args_str)
@@ -399,7 +400,7 @@ def generate_with_tools(
     if not tool_schemas:
         return generate(model, prompt)
 
-    messages = [{"role": "user", "content": prompt}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
 
     tool_call_count = 0
     final_content = ""
@@ -408,7 +409,7 @@ def generate_with_tools(
         response = _call_model_with_tools(
             model,
             messages,
-            tool_schemas=tool_schemas,
+            tools=tool_schemas,
             tool_choice=tool_choice,
         )
 
@@ -502,7 +503,7 @@ def export_gguf(
             model._fast_model.save_pretrained(str(adapter_path))
             model_path = str(adapter_path)
 
-        from unsloth import FastLanguageModel
+        from unsloth import FastLanguageModel  # type: ignore[import-untyped]
 
         gguf_path = output_dir / f"model-{quantization}.gguf"
         FastLanguageModel.save_pretrained_gguf(

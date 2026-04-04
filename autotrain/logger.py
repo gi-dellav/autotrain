@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass
@@ -52,7 +52,7 @@ class AutoTrainLogger:
         self._setup_python_logger()
 
         # TensorBoard writer
-        self._summary_writer = None
+        self._summary_writer: Any = None
 
         # WandB state
         self._wandb_initialized = False
@@ -63,7 +63,7 @@ class AutoTrainLogger:
         # Initialize backends
         self._init_backends()
 
-    def _setup_python_logger(self):
+    def _setup_python_logger(self) -> None:
         """Setup Python logging handler."""
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
@@ -94,7 +94,7 @@ class AutoTrainLogger:
 
             self.logger.info(f"Log file created: {log_file}")
 
-    def _init_backends(self):
+    def _init_backends(self) -> None:
         """Initialize TensorBoard and WandB backends."""
         # Initialize TensorBoard
         if self.config.enable_tensorboard:
@@ -116,10 +116,10 @@ class AutoTrainLogger:
         if self.config.enable_wandb:
             self._init_wandb()
 
-    def _init_wandb(self):
+    def _init_wandb(self) -> None:
         """Initialize Weights & Biases."""
         try:
-            import wandb
+            import wandb  # type: ignore[import-not-found]
 
             wandb.init(
                 project=self.config.wandb_project,

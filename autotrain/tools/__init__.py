@@ -291,7 +291,7 @@ def python(code: str) -> str:
     Example:
         result = python("print('hello'); result = 2 + 2; result")
     """
-    local_vars = {}
+    local_vars: dict[str, Any] = {}
     try:
         compiled = compile(code, "<string>", "exec")
         exec(compiled, {"__builtins__": __builtins__}, local_vars)

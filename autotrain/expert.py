@@ -94,14 +94,14 @@ class ExpertPrompts:
         return self.check if self.check else CHECKER_DEFAULT
 
     def get_rewrite(self) -> str:
-        """Get the rewrite prompt using the default constant if no custom prompt is set.
+         """Get the rewrite prompt using the default constant if no custom prompt is set.
 
-        Returns:
-            The rewrite prompt string.
-        """
-        from .prompts import REWRITE_DEFAULT
+         Returns:
+             The rewrite prompt string.
+         """
+         from .prompts.constants import REWRITE_DEFAULT
 
-        return self.rewrite if self.rewrite else REWRITE_DEFAULT
+         return self.rewrite if self.rewrite else REWRITE_DEFAULT
 
     def get_review(self) -> str:
         """Get the review prompt.
@@ -923,7 +923,7 @@ Provide an overall score and optionally scores for each criterion.""",
             system_prompt or "You are an expert assistant. Provide clear, accurate solutions."
         )
 
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": f"{self.prompts.solve}\n\n{input_data}"},
         ]
@@ -1019,7 +1019,7 @@ Provide an overall score and optionally scores for each criterion.""",
         """
         sys_prompt = system_prompt or "You are a helpful assistant."
 
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": prompt},
         ]
@@ -1207,7 +1207,7 @@ class VisionExpert(Expert):
         except ImportError:
             raise ImportError("litellm is required. Install with: pip install litellm")
 
-        messages = []
+        messages: list[dict[str, Any]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
@@ -1243,12 +1243,12 @@ class VisionExpert(Expert):
 
         return response.choices[0].message.content
 
-    def solve(
+    def solve(  # type: ignore[override]
         self,
         input_data: str,
         images: Optional[list] = None,
         system_prompt: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         """
         Solve a problem using the vision model.
@@ -1280,12 +1280,12 @@ class VisionExpert(Expert):
 
         return result
 
-    def solve_batch(
+    def solve_batch(  # type: ignore[override]
         self,
         inputs: list,
         images: Optional[list] = None,
         system_prompt: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> list:
         """
         Solve multiple problems in batch.
@@ -1300,17 +1300,17 @@ class VisionExpert(Expert):
             List of solutions
         """
         results = []
-        for i, input_data in enumerate(input_data):
+        for i, input_data in enumerate(inputs):
             input_images = images[i] if images and i < len(images) else None
-            result = self.solve(input_data, input_images, system_prompt, **kwargs)
+            result = self.solve(input_data, images=input_images, system_prompt=system_prompt, **kwargs)
             results.append(result)
         return results
 
-    def produce(
+    def produce(  # type: ignore[override]
         self,
         task_description: str,
         count: int = 1,
-        **kwargs,
+        **kwargs: Any,
     ) -> list:
         """
         Generate training samples for a vision task.
@@ -1344,7 +1344,7 @@ class VisionExpert(Expert):
         self._samples.extend(samples)
         return samples
 
-    def add_sample(self, sample: "VisionSample") -> None:
+    def add_sample(self, sample: "VisionSample") -> None:  # type: ignore[override]
         """Add a vision sample to the expert's dataset."""
         self._samples.append(sample)
         if hasattr(sample, "images"):
