@@ -28,6 +28,8 @@ class InferenceConfig:
     presence_penalty: float = 0.0
     thinking: bool = True
     max_workers: int = 8
+    use_async: bool = False
+    async_max_concurrent: int = 8
 
 
 @dataclass

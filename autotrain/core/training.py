@@ -1,10 +1,13 @@
 """Model training and expert management."""
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from autotrain.components import ExpertWeight
 from autotrain.data_types import Sample, VisionSample
+from autotrain.async_utils import AsyncExecutor
 
 if TYPE_CHECKING:
     from autotrain.benchmark import Benchmark
@@ -243,7 +246,7 @@ def _fine_tune_vision(
     _fine_tune(model, iteration, resume_from_checkpoint)
 
 
-def train(
+async def _train_async(
     model: "BaseModel",
     k: Optional[int] = 100,
     i: int = 10,
@@ -263,8 +266,8 @@ def train(
     tool_choice: Optional[str] = None,
     tuning_method: str = "lora",
 ) -> dict:
-    """Unified training loop for both standard and vision models.
-    
+    """Unified async training loop for both standard and vision models.
+
     Args:
         model: The model to train.
         k: Number of samples to generate per iteration.
@@ -287,7 +290,7 @@ def train(
     """
     if i <= 0:
         raise ValueError("i must be positive")
-    
+
     if tuning_method not in ["lora", "qlora"]:
         raise ValueError(f"tuning_method must be 'lora' or 'qlora', got '{tuning_method}'")
 
@@ -326,6 +329,15 @@ def train(
 
     _init_components(model, experts=experts or model.get_experts())
 
+    # Create shared async executor
+    config = model.inference_config
+    use_async = config.use_async
+    max_workers = config.max_workers
+    async_max_concurrent = getattr(config, "async_max_concurrent", max_workers)
+    # If use_async is True, we use pure asyncio (use_threads=False); otherwise ThreadPoolExecutor emulation
+    executor = AsyncExecutor(max_concurrent=async_max_concurrent, use_threads=not use_async)
+    print(f"Created AsyncExecutor: use_async={use_async}, max_concurrent={async_max_concurrent}")
+
     best_accuracy = 0.0
     summary: dict[str, Any] = {
         "iterations_completed": 0,
@@ -336,70 +348,89 @@ def train(
         "best_accuracy": 0.0,
     }
 
-    for iteration in range(start_iteration, start_iteration + i):
-        model._current_iteration = iteration
-        print(f"\n=== Iteration {iteration + 1}/{start_iteration + i} ===")
+    try:
+        for iteration in range(start_iteration, start_iteration + i):
+            model._current_iteration = iteration
+            print(f"\n=== Iteration {iteration + 1}/{start_iteration + i} ===")
 
-        if iteration > start_iteration:
-            model._unload_model()
-            load_in_4bit = tuning_method == "qlora"
-            model.load_model(load_in_4bit=load_in_4bit)
-            _init_components(model, experts=experts or model.get_experts())
+            if iteration > start_iteration:
+                model._unload_model()
+                load_in_4bit = tuning_method == "qlora"
+                model.load_model(load_in_4bit=load_in_4bit)
+                _init_components(model, experts=experts or model.get_experts())
 
-        # Pipeline steps
-        target_k = k or (len(initial_samples) if initial_samples else 10)
-        input_samples = model._producer.generate(target_k * model.sample_multiplier)  # type: ignore
-        print(f"Produced {len(input_samples)} samples")
+            # Pipeline steps (async)
+            target_k = k or (len(initial_samples) if initial_samples else 10)
+            # Producer
+            input_samples = await model._producer.generate_async(
+                target_k * model.sample_multiplier, executor=executor
+            )
+            print(f"Produced {len(input_samples)} samples")
 
-        output_samples = model._solver.solve(input_samples)  # type: ignore
-        print(f"Solved {len(output_samples)} samples")
+            # Solver
+            output_samples = await model._solver.solve_async(input_samples, executor=executor)
+            print(f"Solved {len(output_samples)} samples")
 
-        if model.enable_checker and model._checker:
-            output_samples = model._checker.verify(output_samples)
-            print(f"Verified {len(output_samples)} samples")
+            # Checker (optional)
+            if model.enable_checker and model._checker:
+                output_samples = await model._checker.verify_async(
+                    output_samples, executor=executor
+                )
+                print(f"Verified {len(output_samples)} samples")
 
-        selected_samples = model._splitter.select(output_samples, target_count=target_k)  # type: ignore
-        print(f"Selected {len(selected_samples)} samples")
+            # Splitter
+            selected_samples = await model._splitter.select_async(
+                output_samples, target_count=target_k, executor=executor
+            )
+            print(f"Selected {len(selected_samples)} samples")
 
-        # Prune old training data if keep_last_n_iters is set
-        if model._training_config.keep_last_n_iters is not None:
-            _prune_old_training_data(model, iteration, model._training_config.keep_last_n_iters)
+            # Prune old training data if keep_last_n_iters is set
+            if model._training_config.keep_last_n_iters is not None:
+                _prune_old_training_data(model, iteration, model._training_config.keep_last_n_iters)
 
-        # Add to training data with iteration tracking
-        for s in selected_samples:
-            model.add_sample(s)  # type: ignore
-            # Add iteration metadata to the last added sample
-            if model._training_data:
-                model._training_data[-1]["iteration"] = iteration
+            # Add to training data with iteration tracking
+            for s in selected_samples:
+                model.add_sample(s)  # type: ignore
+                # Add iteration metadata to the last added sample
+                if model._training_data:
+                    model._training_data[-1]["iteration"] = iteration
 
-        _fine_tune(model, iteration, resume_from_checkpoint=resume_from_checkpoint)
+            _fine_tune(model, iteration, resume_from_checkpoint=resume_from_checkpoint)
 
-        # Evaluation
-        curr_acc = 0.0
-        if model.get_benchmark():
-            metrics = model.get_benchmark().evaluate(model=model, iteration=iteration, inference_config=model.inference_config)  # type: ignore
-            curr_acc = metrics.accuracy
-            print(f"Accuracy: {curr_acc:.4f}")
-            summary["benchmark_history"].append({"iteration": iteration, "accuracy": curr_acc})
+            # Evaluation
+            curr_acc = 0.0
+            if model.get_benchmark():
+                metrics = model.get_benchmark().evaluate(
+                    model=model, iteration=iteration, inference_config=model.inference_config
+                )  # type: ignore
+                curr_acc = metrics.accuracy
+                print(f"Accuracy: {curr_acc:.4f}")
+                summary["benchmark_history"].append({"iteration": iteration, "accuracy": curr_acc})
 
-            if curr_acc > best_accuracy:
-                best_accuracy = curr_acc
-                summary["best_iteration"] = iteration
-                summary["best_accuracy"] = curr_acc
-                if keep_best_model:
-                    model.save_checkpoint(
-                        iteration, metadata={"is_best": True, "accuracy": curr_acc}
-                    )
+                if curr_acc > best_accuracy:
+                    best_accuracy = curr_acc
+                    summary["best_iteration"] = iteration
+                    summary["best_accuracy"] = curr_acc
+                    if keep_best_model:
+                        model.save_checkpoint(
+                            iteration, metadata={"is_best": True, "accuracy": curr_acc}
+                        )
 
-                if early_stopping and model.get_benchmark().has_stagnated(threshold=early_stopping_threshold, iterations=early_stopping_patience):  # type: ignore
-                    summary["stopped_early"] = True
-                    break
+                    if early_stopping and model.get_benchmark().has_stagnated(
+                        threshold=early_stopping_threshold, iterations=early_stopping_patience
+                    ):  # type: ignore
+                        summary["stopped_early"] = True
+                        break
 
-        if checkpoint_every > 0 and (iteration + 1) % checkpoint_every == 0:
-            model.save_checkpoint(iteration, metadata={"accuracy": curr_acc})
+            if checkpoint_every > 0 and (iteration + 1) % checkpoint_every == 0:
+                model.save_checkpoint(iteration, metadata={"accuracy": curr_acc})
 
-        summary["iterations_completed"] = iteration + 1
-        summary["total_samples"] = len(model.get_samples())
+            summary["iterations_completed"] = iteration + 1
+            summary["total_samples"] = len(model.get_samples())
+
+    finally:
+        # Ensure executor is shut down
+        executor.shutdown()
 
     # Export benchmark results
     benchmark = model.get_benchmark()
@@ -410,9 +441,65 @@ def train(
     return summary
 
 
+def train(
+    model: "BaseModel",
+    k: Optional[int] = 100,
+    i: int = 10,
+    experts: Optional[list] = None,
+    initial_samples: Optional[list] = None,
+    benchmark: Optional["Benchmark"] = None,
+    early_stopping: bool = False,
+    early_stopping_patience: int = 3,
+    early_stopping_threshold: float = 0.01,
+    checkpoint_every: int = 1,
+    keep_best_model: bool = True,
+    resume_from_checkpoint: bool = False,
+    template: Optional[Any] = None,
+    tools: Optional[list] = None,
+    enable_tools: bool = False,
+    max_tool_calls: int = 10,
+    tool_choice: Optional[str] = None,
+    tuning_method: str = "lora",
+) -> dict:
+    """Unified training loop for both standard and vision models (synchronous wrapper).
+
+    This function runs the async training loop in a synchronous context.
+    See _train_async for full documentation.
+    """
+    return asyncio.run(
+        _train_async(
+            model=model,
+            k=k,
+            i=i,
+            experts=experts,
+            initial_samples=initial_samples,
+            benchmark=benchmark,
+            early_stopping=early_stopping,
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_threshold=early_stopping_threshold,
+            checkpoint_every=checkpoint_every,
+            keep_best_model=keep_best_model,
+            resume_from_checkpoint=resume_from_checkpoint,
+            template=template,
+            tools=tools,
+            enable_tools=enable_tools,
+            max_tool_calls=max_tool_calls,
+            tool_choice=tool_choice,
+            tuning_method=tuning_method,
+        )
+    )
+
+
 def train_vision_model(model: Any, **kwargs: Any) -> Dict[str, Any]:
     """Compatibility wrapper for vision training."""
     return train(model, **kwargs)
 
 
-__all__ = ["train", "_init_components", "_fine_tune", "train_vision_model", "_fine_tune_vision"]
+__all__ = [
+    "train",
+    "_init_components",
+    "_fine_tune",
+    "train_vision_model",
+    "_fine_tune_vision",
+    "_train_async",
+]

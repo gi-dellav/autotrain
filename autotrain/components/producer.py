@@ -36,7 +36,7 @@ class Producer:
         self.inference_config = inference_config
 
     def generate(
-        self, count: int, topic: str = "general knowledge training samples"
+        self, count: int, topic: str = "general knowledge training samples", executor=None
     ) -> list["Sample"]:
         """
         Generate input samples in parallel.
@@ -45,6 +45,7 @@ class Producer:
             count: Number of samples to generate
             topic: The topic to generate training samples for. Defaults to
                   "general knowledge training samples".
+            executor: Optional shared ThreadPoolExecutor to use
 
         Returns:
             List of generated samples
@@ -73,10 +74,54 @@ class Producer:
         if not isinstance(max_workers, int):
             max_workers = 8
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        if executor is not None:
+            # Use shared executor
             samples = list(executor.map(_generate_one, range(count)))
+        else:
+            # Create own executor
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                samples = list(executor.map(_generate_one, range(count)))
 
         return samples
+
+    async def generate_async(
+        self, count: int, topic: str = "general knowledge training samples", executor=None
+    ) -> list["Sample"]:
+        """
+        Generate input samples in parallel (async).
+
+        Args:
+            count: Number of samples to generate
+            topic: The topic to generate training samples for.
+            executor: AsyncExecutor to use (required for async)
+
+        Returns:
+            List of generated samples
+        """
+        from autotrain.data_types import Sample
+
+        # Get the baked prompt for the topic
+        prompt = self.model.prompts.get_producer(topic)
+
+        async def _generate_one(i):
+            # Run sync _generate_input in thread pool
+            input_data = await executor.run_sync(self._generate_input, i, prompt)
+            return Sample(
+                input_data=input_data,
+                output_data="",  # Will be filled by Solver
+                metadata={
+                    "source": "producer",
+                    "producer": "model",
+                    "iteration": 0,
+                    "topic": topic,
+                },
+            )
+
+        if executor is None:
+            raise ValueError("executor is required for async generate")
+
+        results = await executor.map_async(_generate_one, range(count))
+        return results
 
     def _generate_input(self, seed: int, prompt: str) -> str:
         """

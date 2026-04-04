@@ -121,12 +121,13 @@ class Solver:
         # Fallback to model
         return None, False
 
-    def solve(self, samples: list["Sample"]) -> list["Sample"]:
+    def solve(self, samples: list["Sample"], executor=None) -> list["Sample"]:
         """
         Solve input samples to produce outputs in parallel.
 
         Args:
             samples: List of input samples to solve
+            executor: Optional shared ThreadPoolExecutor to use
 
         Returns:
             List of samples with filled outputs
@@ -154,10 +155,50 @@ class Solver:
         if not isinstance(max_workers, int):
             max_workers = 8
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        if executor is not None:
+            # Use shared executor
             solved_samples = list(executor.map(_solve_sample, samples))
+        else:
+            # Create own executor
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                solved_samples = list(executor.map(_solve_sample, samples))
 
         return solved_samples
+
+    async def solve_async(self, samples: list["Sample"], executor=None) -> list["Sample"]:
+        """
+        Solve input samples to produce outputs in parallel (async).
+
+        Args:
+            samples: List of input samples to solve
+            executor: AsyncExecutor to use (required for async)
+
+        Returns:
+            List of samples with filled outputs
+        """
+        iteration = getattr(self.model, "_current_iteration", 0)
+
+        async def _solve_sample(sample):
+            expert, is_expert = self._select_source()
+
+            if is_expert and expert is not None:
+                output = await expert.solve_async(
+                    sample.input_data, metadata=sample.metadata, iteration=iteration
+                )
+                sample.metadata["solver"] = f"expert:{expert.model_name}"
+            else:
+                # Use model solve (sync) via executor
+                output = await executor.run_sync(self._model_solve, sample.input_data, iteration)
+                sample.metadata["solver"] = "model"
+
+            sample.output_data = output
+            return sample
+
+        if executor is None:
+            raise ValueError("executor is required for async solve")
+
+        results = await executor.map_async(_solve_sample, samples)
+        return results
 
     def _model_solve(self, input_data: str, iteration: int = 0) -> str:
         """

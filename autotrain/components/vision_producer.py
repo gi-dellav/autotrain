@@ -43,6 +43,7 @@ class VisionProducer:
         count: int,
         images: Optional[List[Any]] = None,
         task_description: Optional[str] = None,
+        executor=None,
     ) -> List["VisionSample"]:
         """
         Generate vision-language samples in parallel.
@@ -51,6 +52,7 @@ class VisionProducer:
             count: Number of samples to generate
             images: Optional list of images to use
             task_description: Optional task description for generation
+            executor: Optional shared ThreadPoolExecutor to use
 
         Returns:
             List of generated VisionSample
@@ -75,10 +77,54 @@ class VisionProducer:
         if not isinstance(max_workers, int):
             max_workers = 8
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        if executor is not None:
+            # Use shared executor
             samples = list(executor.map(_generate_one, range(count)))
+        else:
+            # Create own executor
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                samples = list(executor.map(_generate_one, range(count)))
 
         return samples
+
+    async def generate_async(
+        self,
+        count: int,
+        images: Optional[List[Any]] = None,
+        task_description: Optional[str] = None,
+        executor=None,
+    ) -> List["VisionSample"]:
+        """
+        Generate vision-language samples in parallel (async).
+
+        Args:
+            count: Number of samples to generate
+            images: Optional list of images to use
+            task_description: Optional task description for generation
+            executor: AsyncExecutor to use (required for async)
+
+        Returns:
+            List of generated VisionSample
+        """
+        from autotrain.data_types import VisionSample
+
+        task_desc = task_description or self.prompt or "Describe this image"
+
+        async def _generate_one(i):
+            image = images[i] if images and i < len(images) else None
+            input_data = await executor.run_sync(self._generate_input, i, task_desc)
+            return VisionSample(
+                input_data=input_data,
+                output_data="",
+                images=[image] if image else [],
+                metadata={"source": "producer", "producer": "vision_model", "iteration": 0},
+            )
+
+        if executor is None:
+            raise ValueError("executor is required for async generate")
+
+        results = await executor.map_async(_generate_one, range(count))
+        return results
 
     def _generate_input(self, seed: int, task_description: str) -> str:
         """

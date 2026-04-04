@@ -94,14 +94,14 @@ class ExpertPrompts:
         return self.check if self.check else CHECKER_DEFAULT
 
     def get_rewrite(self) -> str:
-         """Get the rewrite prompt using the default constant if no custom prompt is set.
+        """Get the rewrite prompt using the default constant if no custom prompt is set.
 
-         Returns:
-             The rewrite prompt string.
-         """
-         from .prompts.constants import REWRITE_DEFAULT
+        Returns:
+            The rewrite prompt string.
+        """
+        from .prompts.constants import REWRITE_DEFAULT
 
-         return self.rewrite if self.rewrite else REWRITE_DEFAULT
+        return self.rewrite if self.rewrite else REWRITE_DEFAULT
 
     def get_review(self) -> str:
         """Get the review prompt.
@@ -268,6 +268,77 @@ class Expert:
         """Clear the response cache."""
         self._cache.clear()
 
+    async def _call_litellm_async(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Make an async litellm API call.
+
+        Args:
+            prompt: User prompt
+            system_prompt: Optional system prompt
+            temperature: Override temperature
+            max_tokens: Override max tokens
+            **kwargs: Additional arguments to pass to acompletion
+
+        Returns:
+            Model response
+        """
+        # Check cache
+        cache_key = f"{prompt}:{system_prompt}"
+        if self._cache_enabled and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        try:
+            from litellm import acompletion
+        except ImportError:
+            raise ImportError("litellm is required. Install with: pip install litellm")
+
+        try:
+            messages = []
+
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+
+            messages.append({"role": "user", "content": prompt})
+
+            response = await acompletion(
+                model=self.model_name,
+                messages=messages,
+                temperature=(
+                    temperature if temperature is not None else self.inference_config.temperature
+                ),
+                max_tokens=(
+                    max_tokens if max_tokens is not None else self.inference_config.max_tokens
+                ),
+                top_p=self.inference_config.top_p,
+                frequency_penalty=self.inference_config.frequency_penalty,
+                presence_penalty=self.inference_config.presence_penalty,
+                api_key=self.api_key,
+                api_base=self.api_base,
+                api_version=self.api_version,
+                custom_llm_provider=self.custom_llm_provider,
+                reasoning_effort=(
+                    "high" if self.thinking and self.inference_config.thinking else None
+                ),
+                **kwargs,
+            )
+
+            result = response.choices[0].message.content
+
+            # Cache result
+            if self._cache_enabled:
+                self._cache[cache_key] = result
+
+            return result
+        except Exception as e:
+            raise RuntimeError(f"litellm API call failed: {e}")
+
     def produce(self, task: str, count: int = 1) -> list["Sample"]:
         """
         Produce training samples as an expert.
@@ -286,6 +357,34 @@ class Expert:
             prompt = self.prompts.get_produce(task)
             prompt += "\n\nGenerate one high-quality input-output pair."
             response = self._call_litellm(prompt=prompt)
+
+            # Parse the response to extract input/output
+            sample = self._parse_sample_response(response)
+            if sample:
+                sample.metadata["producer"] = f"expert:{self.model_name}"
+                samples.append(sample)
+
+        self._samples.extend(samples)
+        return samples
+
+    async def produce_async(self, task: str, count: int = 1, **kwargs) -> list["Sample"]:
+        """
+        Produce training samples as an expert (async).
+
+        Args:
+            task: The task/domain to generate samples for
+            count: Number of samples to generate
+            **kwargs: Additional arguments passed to _call_litellm_async
+
+        Returns:
+            List of generated samples
+        """
+        samples = []
+
+        for _ in range(count):
+            prompt = self.prompts.get_produce(task)
+            prompt += "\n\nGenerate one high-quality input-output pair."
+            response = await self._call_litellm_async(prompt=prompt, **kwargs)
 
             # Parse the response to extract input/output
             sample = self._parse_sample_response(response)
@@ -341,6 +440,54 @@ class Expert:
             temperature=effective_temp,
         )
 
+    async def solve_async(
+        self,
+        input_data: str,
+        metadata: Optional[dict] = None,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        iteration: Optional[int] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Solve a problem as an expert (async).
+
+        Args:
+            input_data: The problem/input to solve
+            metadata: Optional sample metadata to check for self-solving
+            system_prompt: Optional system prompt override
+            temperature: Optional temperature override
+            iteration: Current iteration number for dynamic temperature evaluation
+            **kwargs: Additional arguments passed to _call_litellm_async
+
+        Returns:
+            The expert's solution
+        """
+        from autotrain.utils.function_evaluator import evaluate_temperature
+
+        if self.avoid_solving_same_sample and metadata is not None:
+            producer_key = f"expert:{self.model_name}"
+            if metadata.get("producer") == producer_key:
+                return ""
+
+        effective_temp: Optional[float] = None
+        if temperature is not None:
+            effective_temp = temperature
+        elif self.inference_config.temperature_fn is not None:
+            if iteration is None:
+                iteration = 0
+            effective_temp = evaluate_temperature(self.inference_config.temperature_fn, iteration)
+
+        prompt = self.prompts.get_solve()
+        prompt += f"\n\n{input_data}"
+        return await self._call_litellm_async(
+            prompt=prompt,
+            system_prompt=system_prompt
+            or "You are an expert assistant. Provide clear, accurate solutions.",
+            temperature=effective_temp,
+            **kwargs,
+        )
+
     def solve_batch(
         self,
         inputs: list[str],
@@ -385,6 +532,33 @@ class Expert:
         prompt += "Respond with only the option number (1, 2, 3, etc.) of the best sample."
 
         response = self._call_litellm(prompt=prompt)
+
+        # Parse the selected option
+        match = re.search(r"\d+", response)
+        if match:
+            idx = int(match.group()) - 1
+            if 0 <= idx < len(samples):
+                return samples[idx]
+
+        return samples[0] if samples else ""
+
+    async def select_async(self, samples: list[str]) -> str:
+        """
+        Select the most useful sample from options (async).
+
+        Args:
+            samples: List of sample outputs to choose from
+
+        Returns:
+            The selected sample
+        """
+        samples_text = "\n\n".join([f"Option {i + 1}:\n{s}" for i, s in enumerate(samples)])
+
+        prompt = self.prompts.get_select()
+        prompt += f"\n\n{samples_text}\n\n"
+        prompt += "Respond with only the option number (1, 2, 3, etc.) of the best sample."
+
+        response = await self._call_litellm_async(prompt=prompt)
 
         # Parse the selected option
         match = re.search(r"\d+", response)
@@ -489,6 +663,60 @@ class Expert:
             "strict": strict,
         }
 
+    async def check_async(
+        self,
+        input_data: str,
+        output_data: str,
+        metadata: Optional[dict] = None,
+        strict: bool = False,
+    ) -> dict:
+        """
+        Verify the correctness of a solution (async).
+
+        Args:
+            input_data: The original problem/input
+            output_data: The proposed solution
+            metadata: Optional sample metadata to check for self-checking
+            strict: If True, require exact correctness
+
+        Returns:
+            Dictionary with verification results
+        """
+        if self.avoid_checking_same_sample and metadata is not None:
+            solver_key = f"expert:{self.model_name}"
+            if metadata.get("solver") == solver_key:
+                return {
+                    "is_correct": None,
+                    "explanation": "Skipped self-check: expert cannot verify its own solution",
+                    "checker": "expert",
+                    "expert_model": self.model_name,
+                    "strict": strict,
+                    "skipped": True,
+                }
+
+        strictness = (
+            "Be very strict in your evaluation." if strict else "Be reasonable in your evaluation."
+        )
+
+        prompt = self.prompts.get_check()
+        prompt += f"\n\nProblem: {input_data}\n\nSolution: {output_data}\n\n"
+        prompt += f"{strictness}\n"
+        prompt += "Is this solution correct? Respond with YES or NO, then explain."
+        response = await self._call_litellm_async(
+            prompt=prompt,
+            system_prompt=f"You are an expert verifier. Be precise and accurate. {strictness}",
+        )
+
+        is_correct = "YES" in response.upper().split("\n")[0]
+
+        return {
+            "is_correct": is_correct,
+            "explanation": response,
+            "checker": "expert",
+            "expert_model": self.model_name,
+            "strict": strict,
+        }
+
     def rewrite(
         self,
         input_data: str,
@@ -518,6 +746,35 @@ class Expert:
             system_prompt="You are an expert rewriter. Provide only the corrected solution.",
         )
 
+    async def rewrite_async(
+        self,
+        input_data: str,
+        output_data: str,
+        feedback: Optional[str] = None,
+    ) -> str:
+        """
+        Rewrite an incorrect solution to be correct (async).
+
+        Args:
+            input_data: The original problem/input
+            output_data: The proposed (incorrect) solution
+            feedback: Optional feedback/explanation of what's wrong
+
+        Returns:
+            The expert's corrected solution
+        """
+        prompt = self.prompts.get_rewrite()
+        prompt += f"\n\nProblem: {input_data}\n\nIncorrect Solution: {output_data}\n\n"
+        if feedback:
+            prompt += f"Feedback on Errors: {feedback}\n\n"
+
+        prompt += "Corrected Solution:"
+
+        return await self._call_litellm_async(
+            prompt=prompt,
+            system_prompt="You are an expert rewriter. Provide only the corrected solution.",
+        )
+
     def compare(
         self,
         input_data: str,
@@ -536,6 +793,51 @@ class Expert:
             Dictionary with comparison results
         """
         response = self._call_litellm(
+            prompt=(
+                f"Compare the following two responses to the same input.\n\n"
+                f"Input: {input_data}\n\n"
+                f"Response A:\n{output_a}\n\n"
+                f"Response B:\n{output_b}\n\n"
+                "Which response is better? Consider accuracy, completeness, "
+                "clarity, and helpfulness.\n"
+                "Respond with:\n"
+                '- "A" if Response A is better\n'
+                '- "B" if Response B is better\n'
+                '- "TIE" if they are equally good\n\n'
+                "Then explain your reasoning."
+            ),
+            system_prompt="You are an expert evaluator comparing response quality.",
+        )
+
+        # Parse the winner
+        response_upper = response.upper()
+        if "TIE" in response_upper:
+            winner = "tie"
+        elif "\nA" in response_upper or response_upper.startswith("A"):
+            winner = "a"
+        else:
+            winner = "b"
+
+        return {"winner": winner, "explanation": response, "expert_model": self.model_name}
+
+    async def compare_async(
+        self,
+        input_data: str,
+        output_a: str,
+        output_b: str,
+    ) -> dict:
+        """
+        Compare two outputs and determine which is better (async).
+
+        Args:
+            input_data: The original input
+            output_a: First output
+            output_b: Second output
+
+        Returns:
+            Dictionary with comparison results
+        """
+        response = await self._call_litellm_async(
             prompt=(
                 f"Compare the following two responses to the same input.\n\n"
                 f"Input: {input_data}\n\n"
@@ -589,6 +891,92 @@ class Expert:
             )
 
         response = self._call_litellm(
+            prompt=f"""Rate the following response on a scale of 1 to {scale}.{criteria_prompt}
+
+Input: {input_data}
+Output: {output_data}
+
+Provide an overall score and optionally scores for each criterion.""",
+            system_prompt="You are an expert evaluator.",
+        )
+
+        # Extract overall score
+        score_match = re.search(r"(?:score|rating|overall)[:\s]*(\d+)", response.lower())
+        score = int(score_match.group(1)) if score_match else scale // 2
+
+        return {
+            "score": score,
+            "max_score": scale,
+            "normalized_score": score / scale,
+            "details": response,
+            "expert_model": self.model_name,
+        }
+
+    async def review_async(
+        self,
+        sample: "Sample",
+        criteria: Optional[str] = None,
+    ) -> dict:
+        """
+        Review a sample and provide feedback (async).
+
+        Args:
+            sample: The sample to review
+            criteria: Optional custom review criteria
+
+        Returns:
+            Dictionary with review feedback
+        """
+        criteria_prompt = ""
+        if criteria:
+            criteria_prompt = f"\nReview criteria: {criteria}"
+
+        prompt = self.prompts.get_review()
+        prompt += f"\n\nInput: {sample.input_data}\n\nOutput: {sample.output_data}"
+        if criteria:
+            prompt += f"\n\nReview criteria: {criteria}"
+        prompt += "\n\nProvide a quality score (1-10) and brief feedback."
+        response = await self._call_litellm_async(
+            prompt=prompt,
+            system_prompt="You are an expert reviewer. Provide constructive feedback.",
+        )
+
+        # Parse score and feedback
+        score_match = re.search(r"(?:score|rating)[:\s]*(\d+)", response.lower())
+        score = int(score_match.group(1)) if score_match else 5
+
+        return {
+            "score": score,
+            "feedback": response,
+            "reviewer": "expert",
+            "expert_model": self.model_name,
+        }
+
+    async def rate_async(
+        self,
+        input_data: str,
+        output_data: str,
+        scale: int = 10,
+        criteria: Optional[list[str]] = None,
+    ) -> dict:
+        """
+        Rate an output on a numerical scale (async).
+
+        Args:
+            input_data: The input
+            output_data: The output to rate
+            scale: Maximum score (default 10)
+            criteria: Optional list of criteria to rate
+
+        Returns:
+            Dictionary with ratings
+        """
+        criteria_prompt = ""
+        if criteria:
+            criteria_prompt = "\nRate based on these criteria:\n" + "\n".join(
+                f"- {c}" for c in criteria
+            )
+        response = await self._call_litellm_async(
             prompt=f"""Rate the following response on a scale of 1 to {scale}.{criteria_prompt}
 
 Input: {input_data}
@@ -898,6 +1286,55 @@ Provide an overall score and optionally scores for each criterion.""",
         except Exception as e:
             return {"content": f"[Error: {e}]", "tool_calls": []}
 
+    async def _call_litellm_with_tools_async(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Call litellm with tool calling support asynchronously.
+
+        Args:
+            messages: List of message dicts
+            tools: Optional list of tool schemas
+
+        Returns:
+            Response with tool_calls if any
+        """
+        try:
+            from litellm import acompletion
+        except ImportError:
+            raise ImportError("litellm is required. Install with: pip install litellm")
+
+        tool_schemas = tools or self._tools.get_schemas()
+
+        try:
+            response = await acompletion(
+                model=self.model_name,
+                messages=messages,
+                temperature=self.inference_config.temperature,
+                max_tokens=self.inference_config.max_tokens,
+                top_p=self.inference_config.top_p,
+                tools=tool_schemas if tool_schemas else None,
+                api_key=self.api_key,
+                api_base=self.api_base,
+                api_version=self.api_version,
+                custom_llm_provider=self.custom_llm_provider,
+                reasoning_effort=(
+                    "high" if self.thinking and self.inference_config.thinking else None
+                ),
+            )
+
+            result = response.choices[0].message
+
+            return {
+                "content": result.content or "",
+                "tool_calls": getattr(result, "tool_calls", None) or [],
+            }
+
+        except Exception as e:
+            return {"content": f"[Error: {e}]", "tool_calls": []}
+
     def solve_with_tools(
         self,
         input_data: str,
@@ -938,6 +1375,104 @@ Provide an overall score and optionally scores for each criterion.""",
 
         while tool_call_count < max_tool_calls:
             response = self._call_litellm_with_tools(messages, tool_schemas)
+
+            content = response.get("content", "")
+            final_content = content
+
+            messages.append({"role": "assistant", "content": content})
+
+            tool_calls = response.get("tool_calls", [])
+
+            if not tool_calls:
+                break
+
+            for tool_call in tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    tool_args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = {"code": tool_call.function.arguments}
+
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": tool_call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_name,
+                                    "arguments": tool_call.function.arguments,
+                                },
+                            }
+                        ],
+                    }
+                )
+
+                try:
+                    tool_result = self._tools.execute_tool(tool_name, tool_args)
+                    result_str = str(tool_result)
+                except Exception as e:
+                    result_str = f"Error executing tool '{tool_name}': {str(e)}"
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result_str,
+                    }
+                )
+
+                tool_call_count += 1
+
+            if tool_call_count >= max_tool_calls:
+                final_content += f"\n\n[Max tool calls ({max_tool_calls}) reached]"
+                break
+
+        return final_content
+
+    async def solve_with_tools_async(
+        self,
+        input_data: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tool_calls: int = 10,
+    ) -> str:
+        """
+        Solve a problem with tool calling support (async).
+
+        Args:
+            input_data: The problem/input to solve
+            tools: Optional list of tool schemas (uses registered tools if None)
+            system_prompt: Optional system prompt
+            temperature: Optional temperature override
+            max_tool_calls: Maximum tool call iterations
+
+        Returns:
+            Solution with tool execution results
+        """
+        sys_prompt = (
+            system_prompt or "You are an expert assistant. Provide clear, accurate solutions."
+        )
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": f"{self.prompts.solve}\n\n{input_data}"},
+        ]
+
+        tool_schemas = tools or self._tools.get_schemas()
+
+        if not tool_schemas:
+            return await self.solve_async(
+                input_data, system_prompt=system_prompt, temperature=temperature
+            )
+
+        tool_call_count = 0
+        final_content = ""
+
+        while tool_call_count < max_tool_calls:
+            response = await self._call_litellm_with_tools_async(messages, tool_schemas)
 
             content = response.get("content", "")
             final_content = content
@@ -1121,6 +1656,117 @@ Provide an overall score and optionally scores for each criterion.""",
 
         return final_content
 
+    async def generate_with_tools_async(
+        self,
+        prompt: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        max_tool_calls: int = 10,
+    ) -> str:
+        """
+        Generate text with tool calling support (async).
+
+        Args:
+            prompt: User prompt
+            tools: Optional list of tool schemas (uses registered tools if None)
+            system_prompt: Optional system prompt
+            temperature: Optional temperature override
+            max_tokens: Optional max tokens override
+            max_tool_calls: Maximum tool call iterations
+
+        Returns:
+            Generated text with tool execution results
+        """
+        sys_prompt = system_prompt or "You are a helpful assistant."
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        tool_schemas = tools or self._tools.get_schemas()
+
+        if not tool_schemas:
+            if temperature:
+                self.inference_config.temperature = temperature
+            if max_tokens:
+                self.inference_config.max_tokens = max_tokens
+            return await self._call_litellm_async(
+                prompt, system_prompt=system_prompt, temperature=temperature, max_tokens=max_tokens
+            )
+
+        tool_call_count = 0
+        final_content = ""
+
+        temp = temperature or self.inference_config.temperature
+        maxtok = max_tokens or self.inference_config.max_tokens
+
+        while tool_call_count < max_tool_calls:
+            try:
+                response = await self._call_litellm_with_tools_async(messages, tool_schemas)
+
+                result = response
+                content = result.get("content", "")
+                final_content = content
+
+                messages.append({"role": "assistant", "content": content})
+
+                tool_calls = result.get("tool_calls", [])
+
+                if not tool_calls:
+                    break
+
+                for tool_call in tool_calls:
+                    tool_name = tool_call.function.name
+                    try:
+                        tool_args = json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = {"code": tool_call.function.arguments}
+
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": tool_call.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": tool_call.function.arguments,
+                                    },
+                                }
+                            ],
+                        }
+                    )
+
+                    try:
+                        tool_result = self._tools.execute_tool(tool_name, tool_args)
+                        result_str = str(tool_result)
+                    except Exception as e:
+                        result_str = f"Error executing tool '{tool_name}': {str(e)}"
+
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result_str,
+                        }
+                    )
+
+                    tool_call_count += 1
+
+                if tool_call_count >= max_tool_calls:
+                    final_content += f"\n\n[Max tool calls ({max_tool_calls}) reached]"
+                    break
+
+            except Exception as e:
+                final_content = f"[Error: {str(e)}]"
+                break
+
+        return final_content
+
 
 class VisionExpert(Expert):
     """
@@ -1243,6 +1889,70 @@ class VisionExpert(Expert):
 
         return response.choices[0].message.content
 
+    async def _call_litellm_async(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        images: Optional[list] = None,
+        **kwargs,
+    ) -> str:
+        """
+        Call litellm asynchronously with optional image support.
+
+        Args:
+            prompt: The user prompt
+            system_prompt: Optional system prompt
+            temperature: Optional temperature override
+            max_tokens: Optional max tokens override
+            images: Optional list of images to include
+            **kwargs: Additional arguments
+
+        Returns:
+            Generated text response
+        """
+        try:
+            import litellm
+        except ImportError:
+            raise ImportError("litellm is required. Install with: pip install litellm")
+
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        user_content = []
+        if images:
+            for img in images:
+                if isinstance(img, str):
+                    user_content.append({"type": "image_url", "image_url": {"url": img}})
+                else:
+                    user_content.append({"type": "image", "image": img})
+
+        user_content.append({"type": "text", "text": prompt})
+        messages.append({"role": "user", "content": user_content})
+
+        temperature = temperature or self.inference_config.temperature
+        max_tokens = max_tokens or self.inference_config.max_tokens
+
+        response = await litellm.acompletion(
+            model=(
+                f"{self.custom_llm_provider}/{self.model_name}"
+                if self.custom_llm_provider
+                else self.model_name
+            ),
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=self.api_key,
+            base_url=self.api_base,
+            api_version=self.api_version,
+            reasoning_effort="high" if self.thinking and self.inference_config.thinking else None,
+            **kwargs,
+        )
+
+        return response.choices[0].message.content
+
     def solve(  # type: ignore[override]
         self,
         input_data: str,
@@ -1280,6 +1990,43 @@ class VisionExpert(Expert):
 
         return result
 
+    async def solve_async(  # type: ignore[override]
+        self,
+        input_data: str,
+        images: Optional[list] = None,
+        system_prompt: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Solve a problem using the vision model (async).
+
+        Args:
+            input_data: The input problem/task
+            images: Optional images for vision tasks
+            system_prompt: Optional system prompt
+            **kwargs: Additional arguments
+
+        Returns:
+            Generated solution
+        """
+        prompt = f"{self.prompts.solve} {input_data}"
+        cache_key = f"solve:{input_data}:{str(images)}"
+
+        if self._cache_enabled and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        result = await self._call_litellm_async(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            images=images,
+            **kwargs,
+        )
+
+        if self._cache_enabled:
+            self._cache[cache_key] = result
+
+        return result
+
     def solve_batch(  # type: ignore[override]
         self,
         inputs: list,
@@ -1302,7 +2049,9 @@ class VisionExpert(Expert):
         results = []
         for i, input_data in enumerate(inputs):
             input_images = images[i] if images and i < len(images) else None
-            result = self.solve(input_data, images=input_images, system_prompt=system_prompt, **kwargs)
+            result = self.solve(
+                input_data, images=input_images, system_prompt=system_prompt, **kwargs
+            )
             results.append(result)
         return results
 
@@ -1330,6 +2079,44 @@ class VisionExpert(Expert):
             prompt = f"{self.prompts.produce} {task_description}. Generate sample {i + 1}."
 
             result = self._call_litellm(
+                prompt=prompt,
+                **kwargs,
+            )
+
+            sample = VisionSample(
+                input_data=task_description,
+                output_data=result,
+                metadata={"source": "expert", "expert": self.model_name, "index": i},
+            )
+            samples.append(sample)
+
+        self._samples.extend(samples)
+        return samples
+
+    async def produce_async(
+        self,
+        task_description: str,
+        count: int = 1,
+        **kwargs: Any,
+    ) -> list:
+        """
+        Generate training samples for a vision task (async).
+
+        Args:
+            task_description: Description of the task
+            count: Number of samples to generate
+            **kwargs: Additional arguments
+
+        Returns:
+            List of generated samples
+        """
+        from .data_types import VisionSample
+
+        samples = []
+        for i in range(count):
+            prompt = f"{self.prompts.produce} {task_description}. Generate sample {i + 1}."
+
+            result = await self._call_litellm_async(
                 prompt=prompt,
                 **kwargs,
             )
