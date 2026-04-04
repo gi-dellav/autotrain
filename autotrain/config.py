@@ -83,7 +83,7 @@ class PEFTConfig:
     target_modules: Optional[list[str]] = None
     use_rslora: bool = False
     loftq_config: Optional[Dict[str, Any]] = None
-    tuning_method: str = "lora"  # "lora" or "qlora"
+    tuning_method: str = "qlora"  # "lora" or "qlora"
 
     def get_target_modules(self, model_type: str = "llama") -> list[str]:
         if self.target_modules:

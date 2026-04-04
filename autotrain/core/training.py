@@ -264,7 +264,7 @@ async def _train_async(
     enable_tools: bool = False,
     max_tool_calls: int = 10,
     tool_choice: Optional[str] = None,
-    tuning_method: str = "lora",
+    tuning_method: str = "qlora",
 ) -> dict:
     """Unified async training loop for both standard and vision models.
 
@@ -286,7 +286,7 @@ async def _train_async(
         enable_tools: Enable tool calling.
         max_tool_calls: Maximum number of tool calls.
         tool_choice: Tool choice strategy.
-        tuning_method: Tuning method to use - "lora" (default) or "qlora".
+        tuning_method: Tuning method to use - "qlora" (default) or "lora".
     """
     if i <= 0:
         raise ValueError("i must be positive")
@@ -459,7 +459,7 @@ def train(
     enable_tools: bool = False,
     max_tool_calls: int = 10,
     tool_choice: Optional[str] = None,
-    tuning_method: str = "lora",
+    tuning_method: str = "qlora",
 ) -> dict:
     """Unified training loop for both standard and vision models (synchronous wrapper).
 
