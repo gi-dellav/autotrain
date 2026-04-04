@@ -119,7 +119,7 @@ class TrainingConfig:
     save_total_limit: int = 3
     seed: int = 3407
     scheduler_type: str = "cosine"
-    keep_last_n_iters: Optional[int] = 10
+    keep_last_n_iters: Optional[int] = 15
 
 
 @dataclass
