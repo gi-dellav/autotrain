@@ -1,6 +1,7 @@
 """Model training and expert management."""
 
 import asyncio
+import json
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -101,8 +102,20 @@ def _prune_old_training_data(
     print(f"Remaining training samples: {len(model._training_data)}")
 
 
-def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool = False) -> None:
-    """Fine-tune the model on accumulated training data."""
+def _fine_tune(
+    model: "BaseModel",
+    iteration: int,
+    resume_from_checkpoint: bool = False,
+    is_last_iteration: bool = False,
+) -> None:
+    """Fine-tune the model on accumulated training data.
+
+    Args:
+        model: The model to fine-tune.
+        iteration: Current iteration number.
+        resume_from_checkpoint: Whether to resume from a checkpoint.
+        is_last_iteration: If True, perform full fine-tuning (no LoRA) for this iteration.
+    """
     from autotrain.utils.function_evaluator import (
         evaluate_batch_size,
         evaluate_epochs,
@@ -168,30 +181,41 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
 
         use_gc = model._scalable_config.gradient_checkpointing
 
-        if is_vision:
-            from unsloth import FastVisionModel  # type: ignore[import-untyped]
-
-            model._fast_model = FastVisionModel.get_peft_model(
-                model=model._fast_model,
-                r=lora_rank,
-                target_modules=model._peft_config.get_target_modules(),
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                bias=model._peft_config.bias,
-                use_gradient_checkpointing="unsloth" if use_gc else False,
-            )
+        # Full fine-tuning for last iteration (no LoRA)
+        if is_last_iteration:
+            print("Performing full fine-tuning (FFT) on last iteration - training all parameters")
+            # Unfreeze all parameters (including base model)
+            for param in model._fast_model.parameters():
+                param.requires_grad = True
+            # Ensure gradient checkpointing is enabled if configured
+            if use_gc and hasattr(model._fast_model, "gradient_checkpointing_enable"):
+                model._fast_model.gradient_checkpointing_enable()
         else:
-            from unsloth import FastLanguageModel  # type: ignore[import-untyped]
+            # Standard LoRA/PEFT fine-tuning
+            if is_vision:
+                from unsloth import FastVisionModel  # type: ignore[import-untyped]
 
-            model._fast_model = FastLanguageModel.get_peft_model(
-                model=model._fast_model,
-                r=lora_rank,
-                target_modules=model._peft_config.get_target_modules(),
-                lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
-                bias=model._peft_config.bias,
-                use_gradient_checkpointing="unsloth" if use_gc else False,
-            )
+                model._fast_model = FastVisionModel.get_peft_model(
+                    model=model._fast_model,
+                    r=lora_rank,
+                    target_modules=model._peft_config.get_target_modules(),
+                    lora_alpha=lora_alpha,
+                    lora_dropout=lora_dropout,
+                    bias=model._peft_config.bias,
+                    use_gradient_checkpointing="unsloth" if use_gc else False,
+                )
+            else:
+                from unsloth import FastLanguageModel  # type: ignore[import-untyped]
+
+                model._fast_model = FastLanguageModel.get_peft_model(
+                    model=model._fast_model,
+                    r=lora_rank,
+                    target_modules=model._peft_config.get_target_modules(),
+                    lora_alpha=lora_alpha,
+                    lora_dropout=lora_dropout,
+                    bias=model._peft_config.bias,
+                    use_gradient_checkpointing="unsloth" if use_gc else False,
+                )
 
         batch_size = evaluate_batch_size(
             model._training_config.batch_size_fn or model._training_config.batch_size, iteration
@@ -240,10 +264,13 @@ def _fine_tune(model: "BaseModel", iteration: int, resume_from_checkpoint: bool 
 
 
 def _fine_tune_vision(
-    model: "BaseModel", iteration: int, resume_from_checkpoint: bool = False
+    model: "BaseModel",
+    iteration: int,
+    resume_from_checkpoint: bool = False,
+    is_last_iteration: bool = False,
 ) -> None:
     """Compatibility alias for _fine_tune."""
-    _fine_tune(model, iteration, resume_from_checkpoint)
+    _fine_tune(model, iteration, resume_from_checkpoint, is_last_iteration)
 
 
 async def _train_async(
@@ -265,6 +292,9 @@ async def _train_async(
     max_tool_calls: int = 10,
     tool_choice: Optional[str] = None,
     tuning_method: str = "qlora",
+    use_fft_last_iter: bool = False,
+    keep_checkpoint_last_iter: bool = False,
+    keep_dataset_last_iter: bool = False,
 ) -> dict:
     """Unified async training loop for both standard and vision models.
 
@@ -287,6 +317,9 @@ async def _train_async(
         max_tool_calls: Maximum number of tool calls.
         tool_choice: Tool choice strategy.
         tuning_method: Tuning method to use - "qlora" (default) or "lora".
+        use_fft_last_iter: Use full fine-tuning (no LoRA) for the last iteration.
+        keep_checkpoint_last_iter: Force save a checkpoint for the last iteration.
+        keep_dataset_last_iter: Save the dataset from the last iteration separately.
     """
     if i <= 0:
         raise ValueError("i must be positive")
@@ -312,6 +345,8 @@ async def _train_async(
             start_iteration = 0
     else:
         start_iteration = 0
+
+    planned_final_iteration = start_iteration + i - 1
 
     if initial_samples:
         for s in initial_samples:
@@ -352,6 +387,11 @@ async def _train_async(
         for iteration in range(start_iteration, start_iteration + i):
             model._current_iteration = iteration
             print(f"\n=== Iteration {iteration + 1}/{start_iteration + i} ===")
+
+            # Determine if this is the last iteration for full fine-tuning
+            is_last_iteration = False
+            if use_fft_last_iter and iteration == planned_final_iteration:
+                is_last_iteration = True
 
             if iteration > start_iteration:
                 model._unload_model()
@@ -395,7 +435,12 @@ async def _train_async(
                 if model._training_data:
                     model._training_data[-1]["iteration"] = iteration
 
-            _fine_tune(model, iteration, resume_from_checkpoint=resume_from_checkpoint)
+            _fine_tune(
+                model,
+                iteration,
+                resume_from_checkpoint=resume_from_checkpoint,
+                is_last_iteration=is_last_iteration,
+            )
 
             # Evaluation
             curr_acc = 0.0
@@ -432,6 +477,52 @@ async def _train_async(
         # Ensure executor is shut down
         executor.shutdown()
 
+    # Handle last iteration checkpoint and dataset saving if requested
+    if summary["iterations_completed"] > 0:
+        actual_last_iter = summary["iterations_completed"] - 1
+
+        if keep_checkpoint_last_iter:
+            # Check if checkpoint for this iteration exists
+            existing_ckpts = [
+                c
+                for c in model._checkpoint_manager.list_checkpoints()
+                if c.iteration == actual_last_iter
+            ]
+            if not existing_ckpts:
+                print(
+                    f"Saving final checkpoint for iteration {actual_last_iter} (keep_checkpoint_last_iter=True)"
+                )
+                model.save_checkpoint(
+                    actual_last_iter,
+                    metadata={"is_final": True, "accuracy": summary.get("best_accuracy", 0.0)},
+                )
+            else:
+                print(
+                    f"Checkpoint for iteration {actual_last_iter} already exists, skipping (keep_checkpoint_last_iter)"
+                )
+
+        if keep_dataset_last_iter:
+            # Save dataset of last iteration to final_dataset/
+            final_dataset_dir = Path(model._checkpoint_manager.checkpoint_dir) / "final_dataset"
+            final_dataset_dir.mkdir(parents=True, exist_ok=True)
+
+            # Filter training data to only samples from the last iteration
+            last_iter_samples = [
+                sample
+                for sample in model._training_data
+                if sample.get("iteration") == actual_last_iter
+            ]
+
+            if last_iter_samples:
+                dataset_path = final_dataset_dir / "training_data.json"
+                with open(dataset_path, "w") as f:
+                    json.dump(last_iter_samples, f, indent=2)
+                print(
+                    f"Saved final iteration dataset ({len(last_iter_samples)} samples) to {dataset_path}"
+                )
+            else:
+                print("No training data found for final iteration (keep_dataset_last_iter)")
+
     # Export benchmark results
     benchmark = model.get_benchmark()
     if benchmark:
@@ -460,11 +551,19 @@ def train(
     max_tool_calls: int = 10,
     tool_choice: Optional[str] = None,
     tuning_method: str = "qlora",
+    use_fft_last_iter: bool = False,
+    keep_checkpoint_last_iter: bool = False,
+    keep_dataset_last_iter: bool = False,
 ) -> dict:
     """Unified training loop for both standard and vision models (synchronous wrapper).
 
     This function runs the async training loop in a synchronous context.
     See _train_async for full documentation.
+
+    Additional parameters:
+        use_fft_last_iter: If True, perform full fine-tuning (FFT) on the last iteration.
+        keep_checkpoint_last_iter: If True, ensure a checkpoint is saved for the last iteration.
+        keep_dataset_last_iter: If True, save the dataset from the last iteration to final_dataset/.
     """
     return asyncio.run(
         _train_async(
@@ -486,6 +585,9 @@ def train(
             max_tool_calls=max_tool_calls,
             tool_choice=tool_choice,
             tuning_method=tuning_method,
+            use_fft_last_iter=use_fft_last_iter,
+            keep_checkpoint_last_iter=keep_checkpoint_last_iter,
+            keep_dataset_last_iter=keep_dataset_last_iter,
         )
     )
 
